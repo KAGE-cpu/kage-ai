@@ -234,7 +234,7 @@ private fun XDocsApp(root: File) {
                                     }
                                     if (!item.isDirectory && item.extension.equals("pdf", true)) IconButton(onClick = { selected = item; page = Page.EDITOR }) { Icon(Icons.Default.Edit, "Edit", tint = Accent) }
                                     IconButton(onClick = { selected = item; renameValue = item.name; renameDialog = true }) { Icon(Icons.Default.DriveFileRenameOutline, "Rename", tint = Muted) }
-                                    IconButton(onClick = { selected = item; moveTarget = ""; moveDialog = true }) { Icon(Icons.Default.DriveFileMove, "Move", tint = Muted) }
+                                    if (!item.isDirectory) IconButton(onClick = { selected = item; moveTarget = ""; moveDialog = true }) { Icon(Icons.Default.DriveFileMove, "Move", tint = Muted) }
                                     if (!item.isDirectory) IconButton(onClick = { selected = item; exportSelected.launch(item.name) }) { Icon(Icons.Default.FileDownload, "Export", tint = Accent) }
                                     IconButton(onClick = { item.deleteRecursively(); if (selected == item) selected = null; refresh++; message = "Deleted ${item.name}" }) { Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFFF8795)) }
                                 }
@@ -292,7 +292,7 @@ private fun XDocsApp(root: File) {
                         onBack = { page = Page.FILES },
                         onSave = { textOverlays ->
                             val source = selected ?: error("No PDF selected")
-                            val output = addTextToPdf(source, textOverlays, currentDir())
+                            val output = addTextToPdf(source, textOverlays, source.parentFile ?: root)
                             selected = output; refresh++; message = "Saved edited copy with ${textOverlays.size} text item(s): ${output.name}"; page = Page.FILES
                         },
                         onMessage = { message = it }
