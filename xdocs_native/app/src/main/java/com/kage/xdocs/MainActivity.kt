@@ -2,6 +2,7 @@ package com.kage.xdocs
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.core.content.FileProvider
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -60,6 +61,14 @@ class MainActivity : ComponentActivity() {
 }
 private enum class Page { HOME, FILES, SCAN, CONVERT, VIEWER, EDITOR }
 
+private data class PdfTextOverlay(
+    val page: Int,
+    val x: Float,
+    val y: Float,
+    val text: String,
+    val fontSize: Float
+)
+
 @Composable
 private fun XDocsApp(root: File) {
     val context = LocalContext.current
@@ -75,6 +84,7 @@ private fun XDocsApp(root: File) {
     var moveDialog by remember { mutableStateOf(false) }
     var moveTarget by remember { mutableStateOf("") }
     var scanBitmaps by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
+    var cameraCaptureFile by remember { mutableStateOf<File?>(null) }
     var exportZip by remember { mutableStateOf<File?>(null) }
 
     fun currentDir() = folder?.let { File(root, it) } ?: root
@@ -112,16 +122,18 @@ private fun XDocsApp(root: File) {
         return output
     }
 
-    val importPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) runCatching {
-            val file = copyUri(uri, currentDir())
-            selected = file; page = Page.FILES; refresh++
-            message = "Imported ${file.name}"
+    val importFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) runCatching {
+            val imported = uris.map { copyUri(it, currentDir()) }
+            selected = imported.lastOrNull()
+            page = Page.FILES
+            refresh++
+            message = "Imported ${imported.size} file(s)"
         }.onFailure { message = "Import failed: ${it.message}" }
     }
     val importImages = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) runCatching {
-            val bitmaps = uris.mapNotNull { uri -> context.contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it) } }
+            val bitmaps = uris.map { uri -> decodeSampledBitmap(context.contentResolver, uri) }
             val output = uniqueFile(currentDir(), "Images_to_PDF.pdf")
             createPdf(bitmaps, output)
             bitmaps.forEach { it.recycle() }
@@ -129,9 +141,16 @@ private fun XDocsApp(root: File) {
             message = "Created ${output.name}"
         }.onFailure { message = "Image conversion failed: ${it.message}" }
     }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) { scanBitmaps = scanBitmaps + bitmap; message = "Captured page ${scanBitmaps.size}. Capture more or create the PDF." }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val capture = cameraCaptureFile
+        cameraCaptureFile = null
+        if (success && capture != null) runCatching {
+            val bitmap = decodeSampledBitmap(capture)
+            scanBitmaps = scanBitmaps + bitmap
+            message = "Captured full-resolution page ${scanBitmaps.size}. Capture another page or create the PDF."
+        }.onFailure { message = "Could not read camera image: ${it.message}" }
         else message = "Camera capture cancelled."
+        capture?.delete()
     }
     val mergePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) runCatching {
@@ -140,7 +159,7 @@ private fun XDocsApp(root: File) {
             message = "Merged ${uris.size} PDFs into ${output.name}"
         }.onFailure { message = "Merge failed: ${it.message}" }
     }
-    val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+    val exportSelected = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val source = selected
         if (uri != null && source != null) runCatching {
             context.contentResolver.openOutputStream(uri).use { output ->
@@ -189,7 +208,7 @@ private fun XDocsApp(root: File) {
                         Text("Your everyday document workspace, offline.", color = Muted)
                         Spacer(Modifier.height(14.dp))
                         Action("My Documents", "Browse, rename, move and organise files", Icons.Default.FolderOpen) { page = Page.FILES; folder = null }
-                        Action("Import PDF", "Copy a PDF into X DOCS", Icons.Default.UploadFile) { importPdf.launch(arrayOf("application/pdf")) }
+                        Action("Import files", "Copy documents and other files into X DOCS", Icons.Default.UploadFile) { importFiles.launch(arrayOf("*/*")) }
                         Action("Open PDF viewer", "Read and navigate PDF pages", Icons.Default.MenuBook) { if (selected?.extension.equals("pdf", true)) page = Page.VIEWER else { message = "Select a PDF first."; page = Page.FILES } }
                         Action("PDF editor", "Tap the page to position new text", Icons.Default.Edit) { if (selected?.extension.equals("pdf", true)) page = Page.EDITOR else { message = "Select a PDF first."; page = Page.FILES } }
                         Action("Scan documents", "Capture multiple camera pages into one PDF", Icons.Default.CameraAlt) { page = Page.SCAN }
@@ -199,7 +218,7 @@ private fun XDocsApp(root: File) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(folder ?: "My Documents", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                             TextButton(onClick = { folderDialog = true }) { Icon(Icons.Default.CreateNewFolder, null); Text("Folder") }
-                            TextButton(onClick = { importPdf.launch(arrayOf("application/pdf")) }) { Icon(Icons.Default.Add, null); Text("Import") }
+                            TextButton(onClick = { importFiles.launch(arrayOf("*/*")) }) { Icon(Icons.Default.Add, null); Text("Import") }
                         }
                         if (folder != null) TextButton(onClick = { folder = null }) { Icon(Icons.Default.ArrowBack, null); Text("All documents") }
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.weight(1f)) {
@@ -216,6 +235,7 @@ private fun XDocsApp(root: File) {
                                     if (!item.isDirectory && item.extension.equals("pdf", true)) IconButton(onClick = { selected = item; page = Page.EDITOR }) { Icon(Icons.Default.Edit, "Edit", tint = Accent) }
                                     IconButton(onClick = { selected = item; renameValue = item.name; renameDialog = true }) { Icon(Icons.Default.DriveFileRenameOutline, "Rename", tint = Muted) }
                                     IconButton(onClick = { selected = item; moveTarget = ""; moveDialog = true }) { Icon(Icons.Default.DriveFileMove, "Move", tint = Muted) }
+                                    if (!item.isDirectory) IconButton(onClick = { selected = item; exportSelected.launch(item.name) }) { Icon(Icons.Default.FileDownload, "Export", tint = Accent) }
                                     IconButton(onClick = { item.deleteRecursively(); if (selected == item) selected = null; refresh++; message = "Deleted ${item.name}" }) { Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFFF8795)) }
                                 }
                             }
@@ -225,7 +245,14 @@ private fun XDocsApp(root: File) {
                     Page.SCAN -> {
                         Text("Scan documents", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Text("Capture pages with your camera or select images from your gallery.", color = Muted)
-                        Action("Capture page", "Use your phone camera", Icons.Default.CameraAlt) { camera.launch(null) }
+                        Action("Capture page", "Use your phone camera at full resolution", Icons.Default.CameraAlt) {
+                            runCatching {
+                                val capture = File(context.cacheDir, "xdocs_scan_${System.currentTimeMillis()}.jpg")
+                                cameraCaptureFile = capture
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", capture)
+                                camera.launch(uri)
+                            }.onFailure { cameraCaptureFile?.delete(); cameraCaptureFile = null; message = "Camera could not start: ${it.message}" }
+                        }
                         Action("Add gallery images", "Create a PDF from existing photos", Icons.Default.AddPhotoAlternate) { importImages.launch("image/*") }
                         Text("Captured pages waiting: ${scanBitmaps.size}", color = Accent, fontWeight = FontWeight.SemiBold)
                         if (scanBitmaps.isNotEmpty()) {
@@ -253,8 +280,8 @@ private fun XDocsApp(root: File) {
                                 message = "Created ${exportZip!!.name}. Use Export page images ZIP below."
                             }.onFailure { message = "PDF conversion failed: ${it.message}" }
                         }
-                        Action("Export selected PDF", "Save a copy to a location you choose", Icons.Default.FileDownload) {
-                            selected?.takeIf { it.extension.equals("pdf", true) }?.let { exportPdf.launch(it.name) } ?: run { message = "Select a PDF first." }
+                        Action("Export selected file", "Save a copy to a location you choose", Icons.Default.FileDownload) {
+                            selected?.let { exportSelected.launch(it.name) } ?: run { message = "Select a file first." }
                         }
                         if (exportZip != null) Action("Export page images ZIP", "Save rendered PNG pages outside X DOCS", Icons.Default.FolderZip) { exportArchive.launch(exportZip!!.name) }
                         Text("PDF-to-image creates one PNG per page and a ZIP archive for export.", color = Muted, fontSize = 12.sp)
@@ -263,10 +290,10 @@ private fun XDocsApp(root: File) {
                         file = selected,
                         editing = page == Page.EDITOR,
                         onBack = { page = Page.FILES },
-                        onSave = { text, index, x, y, size ->
+                        onSave = { textOverlays ->
                             val source = selected ?: error("No PDF selected")
-                            val output = addTextToPdf(source, text, index, x, y, size, currentDir())
-                            selected = output; refresh++; message = "Saved edited copy: ${output.name}"; page = Page.FILES
+                            val output = addTextToPdf(source, textOverlays, currentDir())
+                            selected = output; refresh++; message = "Saved edited copy with ${textOverlays.size} text item(s): ${output.name}"; page = Page.FILES
                         },
                         onMessage = { message = it }
                     )
@@ -345,13 +372,15 @@ private fun XDocsApp(root: File) {
 }
 
 @Composable
-private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSave: (String, Int, Float, Float, Float) -> Unit, onMessage: (String) -> Unit) {
+private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSave: (List<PdfTextOverlay>) -> Unit, onMessage: (String) -> Unit) {
     var pageIndex by remember(file) { mutableIntStateOf(0) }
     var pageCount by remember(file) { mutableIntStateOf(0) }
-    var overlay by remember(file) { mutableStateOf("") }
+    var textDraft by remember(file) { mutableStateOf("") }
     var fontSize by remember(file) { mutableStateOf("14") }
     var tapX by remember(file) { mutableFloatStateOf(48f) }
     var tapY by remember(file) { mutableFloatStateOf(48f) }
+    var positionChosen by remember(file) { mutableStateOf(false) }
+    var overlays by remember(file) { mutableStateOf(emptyList<PdfTextOverlay>()) }
     var bitmap by remember(file, pageIndex) { mutableStateOf<Bitmap?>(null) }
     var pageWidth by remember(file, pageIndex) { mutableFloatStateOf(1f) }
     var pageHeight by remember(file, pageIndex) { mutableFloatStateOf(1f) }
@@ -364,7 +393,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                     require(doc.numberOfPages > 0) { "This PDF has no pages." }
                     val idx = pageIndex.coerceIn(0, doc.numberOfPages - 1)
                     val pdfPage = doc.getPage(idx)
-                    val rendered = PDFRenderer(doc).renderImage(idx, 1.25f, ImageType.RGB)
+                    val rendered = PDFRenderer(doc).renderImage(idx, 1.15f, ImageType.RGB)
                     Triple(rendered, pdfPage.mediaBox.width, pdfPage.mediaBox.height) to doc.numberOfPages
                 }
             }
@@ -382,14 +411,27 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
         }
         Text(file?.name ?: "No PDF selected", color = Muted, fontSize = 12.sp)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = { if (pageIndex > 0) pageIndex-- }) { Icon(Icons.Default.ChevronLeft, null, tint = Accent) }
+            IconButton(onClick = { if (pageIndex > 0) { pageIndex--; positionChosen = false } }) { Icon(Icons.Default.ChevronLeft, null, tint = Accent) }
             Text(if (pageCount > 0) "Page ${pageIndex + 1} of ${pageCount}" else "Loading page…", color = Color.White)
-            IconButton(onClick = { if (pageIndex + 1 < pageCount) pageIndex++ }) { Icon(Icons.Default.ChevronRight, null, tint = Accent) }
+            IconButton(onClick = { if (pageIndex + 1 < pageCount) { pageIndex++; positionChosen = false } }) { Icon(Icons.Default.ChevronRight, null, tint = Accent) }
         }
         if (editing) {
-            OutlinedTextField(overlay, { overlay = it }, label = { Text("Text to add") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(fontSize, { fontSize = it.filter { c -> c.isDigit() || c == '.' }.take(5) }, label = { Text("Font size (6–72)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            Text("Tap the page where the text should begin.", color = Accent, fontSize = 12.sp)
+            OutlinedTextField(
+                value = textDraft,
+                onValueChange = { textDraft = it },
+                label = { Text("Text to add") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 1,
+                maxLines = 3
+            )
+            OutlinedTextField(
+                value = fontSize,
+                onValueChange = { fontSize = it.filter { c -> c.isDigit() || c == '.' }.take(5) },
+                label = { Text("Font size (6–72)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text("Tap the page to choose where this text will be placed.", color = Accent, fontSize = 12.sp)
         }
         Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF202A3D), RoundedCornerShape(12.dp)).padding(5.dp), contentAlignment = Alignment.Center) {
             val current = bitmap
@@ -401,6 +443,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                             val sy = pageHeight / size.height.coerceAtLeast(1)
                             tapX = (offset.x * sx).coerceIn(0f, pageWidth - 4f)
                             tapY = (pageHeight - offset.y * sy).coerceIn(4f, pageHeight - 4f)
+                            positionChosen = true
                             onMessage("Text position selected on page ${pageIndex + 1}.")
                         }
                     }
@@ -409,10 +452,42 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
         }
         if (editing) {
             Text("Position: ${tapX.toInt()}, ${tapY.toInt()} PDF points", color = Muted, fontSize = 11.sp)
-            Button(onClick = {
-                if (overlay.isBlank()) onMessage("Enter the text to add.")
-                else onSave(overlay, pageIndex, tapX, tapY, (fontSize.toFloatOrNull() ?: 14f).coerceIn(6f, 72f))
-            }, modifier = Modifier.fillMaxWidth(), enabled = file != null && bitmap != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        if (!positionChosen) onMessage("Tap the PDF page first.")
+                        else if (textDraft.isBlank()) onMessage("Enter the text to add.")
+                        else {
+                            val size = (fontSize.toFloatOrNull() ?: 14f).coerceIn(6f, 72f)
+                            overlays = overlays + PdfTextOverlay(pageIndex, tapX, tapY, textDraft.trim(), size)
+                            textDraft = ""
+                            positionChosen = false
+                            onMessage("Added text item. Total: ${overlays.size}")
+                        }
+                    },
+                    enabled = bitmap != null && positionChosen,
+                    modifier = Modifier.weight(1f)
+                ) { Icon(Icons.Default.Add, null); Text("Add text") }
+                OutlinedButton(
+                    onClick = {
+                        if (overlays.isNotEmpty()) {
+                            overlays = overlays.dropLast(1)
+                            onMessage("Removed the last text item.")
+                        }
+                    },
+                    enabled = overlays.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) { Icon(Icons.Default.Undo, null); Text("Undo") }
+            }
+            Text("${overlays.size} text item(s) queued across pages", color = Muted, fontSize = 11.sp)
+            Button(
+                onClick = {
+                    if (overlays.isEmpty()) onMessage("Add at least one text item first.")
+                    else onSave(overlays)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = file != null && bitmap != null && overlays.isNotEmpty()
+            ) {
                 Icon(Icons.Default.Save, null); Text("Save edited copy")
             }
         } else Text("Read-only preview. Open Edit to add text.", color = Muted, fontSize = 12.sp)
@@ -439,21 +514,34 @@ private fun EmptyState(title: String, subtitle: String) {
     }
 }
 
-private fun addTextToPdf(source: File, text: String, index: Int, x: Float, y: Float, size: Float, directory: File): File {
-    require(text.isNotBlank()) { "Text cannot be empty." }
+private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, directory: File): File {
+    require(overlays.isNotEmpty()) { "Add at least one text item." }
     val output = uniqueFile(directory, "${source.nameWithoutExtension}_edited.pdf")
     PDDocument.load(source).use { doc ->
-        require(index in 0 until doc.numberOfPages) { "Page does not exist." }
-        val page = doc.getPage(index)
-        val px = x.coerceIn(0f, page.mediaBox.width - 2f)
-        val py = y.coerceIn(size, page.mediaBox.height - 2f)
-        PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
-            stream.beginText()
-            stream.setFont(PDType1Font.HELVETICA, size)
-            stream.setNonStrokingColor(0, 0, 0)
-            stream.newLineAtOffset(px, py)
-            stream.showText(text)
-            stream.endText()
+        val embeddedFont = runCatching {
+            val fontFile = File("/system/fonts/Roboto-Regular.ttf")
+            if (fontFile.isFile) com.tom_roush.pdfbox.pdmodel.font.PDType0Font.load(doc, fontFile) else null
+        }.getOrNull()
+        val font = embeddedFont ?: PDType1Font.HELVETICA
+        overlays.forEach { item ->
+            require(item.page in 0 until doc.numberOfPages) { "Page ${item.page + 1} does not exist." }
+            val page = doc.getPage(item.page)
+            val px = item.x.coerceIn(0f, page.mediaBox.width - 2f)
+            val py = item.y.coerceIn(item.fontSize, page.mediaBox.height - 2f)
+            PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
+                stream.beginText()
+                stream.setFont(font, item.fontSize)
+                stream.setNonStrokingColor(0, 0, 0)
+                stream.newLineAtOffset(px, py)
+                item.text.split('\n').take(40).forEachIndexed { index, line ->
+                    if (index > 0) stream.newLineAtOffset(0f, -item.fontSize * 1.2f)
+                    val printable = if (embeddedFont != null) line.take(2000) else line.map { c ->
+                        if (c.code in 32..255) c else '?'
+                    }.joinToString("").take(2000)
+                    stream.showText(printable)
+                }
+                stream.endText()
+            }
         }
         doc.save(output)
     }
@@ -488,4 +576,30 @@ private fun uniqueFile(dir: File, desired: String): File {
     while (candidate.exists()) { candidate = File(dir, "${base}_${n++}${ext}") }
     return candidate
 }
+private fun decodeSampledBitmap(file: File, maxDimension: Int = 2000): Bitmap {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    var sample = 1
+    while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > maxDimension) sample *= 2
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sample
+        inPreferredConfig = Bitmap.Config.RGB_565
+    }
+    return BitmapFactory.decodeFile(file.absolutePath, options) ?: error("Could not decode image.")
+}
+
+private fun decodeSampledBitmap(resolver: android.content.ContentResolver, uri: android.net.Uri, maxDimension: Int = 2000): Bitmap {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri).use { input -> BitmapFactory.decodeStream(input, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth / sample, bounds.outHeight / sample) > maxDimension) sample *= 2
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sample
+        inPreferredConfig = Bitmap.Config.RGB_565
+    }
+    return resolver.openInputStream(uri).use { input ->
+        BitmapFactory.decodeStream(input, null, options)
+    } ?: error("Could not decode selected image.")
+}
+
 private fun String.safeFile(): String = replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(100).ifBlank { "document.pdf" }
