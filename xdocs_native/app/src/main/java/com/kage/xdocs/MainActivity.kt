@@ -48,10 +48,10 @@ import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val Ink = Color(0xFF090E1C)
-private val Panel = Color(0xFF151F35)
-private val Muted = Color(0xFF9AA8C5)
-private val Accent = Color(0xFF9AA8FF)
+private val Ink = Color(0xFF08050D)
+private val Panel = Color(0xFF171020)
+private val Muted = Color(0xFFB5A8C8)
+private val Accent = Color(0xFFB66CFF)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -184,7 +184,7 @@ private fun XDocsApp(root: File) {
         Scaffold(
             containerColor = Ink,
             bottomBar = {
-                if (page != Page.VIEWER && page != Page.EDITOR) NavigationBar(containerColor = Color(0xFF111A2D)) {
+                if (page != Page.VIEWER && page != Page.EDITOR) NavigationBar(containerColor = Color(0xFF120B1A)) {
                     listOf(Page.HOME to Icons.Default.Home, Page.FILES to Icons.Default.Folder, Page.SCAN to Icons.Default.CameraAlt, Page.CONVERT to Icons.Default.Transform).forEach { (p, icon) ->
                         NavigationBarItem(selected = page == p, onClick = { page = p; if (p != Page.FILES) folder = null }, icon = { Icon(icon, null) }, label = { Text(p.name.lowercase().replaceFirstChar { it.uppercase() }) })
                     }
