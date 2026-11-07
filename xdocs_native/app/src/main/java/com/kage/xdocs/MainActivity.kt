@@ -62,11 +62,9 @@ class MainActivity : ComponentActivity() {
 private enum class Page { HOME, FILES, SCAN, CONVERT, VIEWER, EDITOR }
 
 private data class PdfTextOverlay(
-    val page: Int,
-    val x: Float,
-    val y: Float,
-    val text: String,
-    val fontSize: Float
+    val page: Int, val x: Float, val y: Float, val text: String, val fontSize: Float,
+    val fontKey: String = "sans", val colorArgb: Int = android.graphics.Color.BLACK,
+    val signaturePath: String? = null
 )
 
 @Composable
@@ -373,127 +371,168 @@ private fun XDocsApp(root: File) {
 
 @Composable
 private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSave: (List<PdfTextOverlay>) -> Unit, onMessage: (String) -> Unit) {
+    val context = LocalContext.current
     var pageIndex by remember(file) { mutableIntStateOf(0) }
     var pageCount by remember(file) { mutableIntStateOf(0) }
-    var textDraft by remember(file) { mutableStateOf("") }
-    var fontSize by remember(file) { mutableStateOf("14") }
-    var tapX by remember(file) { mutableFloatStateOf(48f) }
-    var tapY by remember(file) { mutableFloatStateOf(48f) }
-    var positionChosen by remember(file) { mutableStateOf(false) }
+    var draft by remember(file) { mutableStateOf("") }
+    var fontSize by remember(file) { mutableFloatStateOf(16f) }
+    var fontKey by remember(file) { mutableStateOf("sans") }
+    var textColor by remember(file) { mutableIntStateOf(android.graphics.Color.BLACK) }
     var overlays by remember(file) { mutableStateOf(emptyList<PdfTextOverlay>()) }
+    var selected by remember(file) { mutableIntStateOf(-1) }
     var bitmap by remember(file, pageIndex) { mutableStateOf<Bitmap?>(null) }
     var pageWidth by remember(file, pageIndex) { mutableFloatStateOf(1f) }
     var pageHeight by remember(file, pageIndex) { mutableFloatStateOf(1f) }
+    var fontMenu by remember { mutableStateOf(false) }
+    var signatureDialog by remember { mutableStateOf(false) }
+    var strokes by remember { mutableStateOf<List<List<androidx.compose.ui.geometry.Offset>>>(emptyList()) }
+    var activeStroke by remember { mutableStateOf(emptyList<androidx.compose.ui.geometry.Offset>()) }
+    var padSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+
     LaunchedEffect(file, pageIndex) {
         bitmap?.recycle(); bitmap = null
         if (file == null || !file.exists()) return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            runCatching {
-                PDDocument.load(file).use { doc ->
-                    require(doc.numberOfPages > 0) { "This PDF has no pages." }
-                    val idx = pageIndex.coerceIn(0, doc.numberOfPages - 1)
-                    val pdfPage = doc.getPage(idx)
-                    val rendered = PDFRenderer(doc).renderImage(idx, 1.15f, ImageType.RGB)
-                    Triple(rendered, pdfPage.mediaBox.width, pdfPage.mediaBox.height) to doc.numberOfPages
-                }
-            }
-        }.onSuccess { result ->
-            bitmap = result.first.first
-            pageWidth = result.first.second
-            pageHeight = result.first.third
-            pageCount = result.second
-        }.onFailure { onMessage("Could not open PDF: ${it.message}") }
+            runCatching { PDDocument.load(file).use { doc ->
+                require(doc.numberOfPages > 0) { "This PDF has no pages." }
+                val idx=pageIndex.coerceIn(0,doc.numberOfPages-1)
+                Triple(PDFRenderer(doc).renderImage(idx,1.2f,ImageType.RGB),doc.getPage(idx).mediaBox.width,doc.getPage(idx).mediaBox.height) to doc.numberOfPages
+            } }
+        }.onSuccess { r -> bitmap=r.first.first; pageWidth=r.first.second; pageHeight=r.first.third; pageCount=r.second }
+            .onFailure { onMessage("Could not open PDF: \${it.message}") }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null); Text("Back") }
-            Text(if (editing) "PDF Editor" else "PDF Viewer", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            TextButton(onClick=onBack) { Icon(Icons.Default.ArrowBack,null); Text("Back") }
+            Column(Modifier.weight(1f)) {
+                Text(if(editing) "KAGE PDF STUDIO" else "PDF Viewer",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold)
+                Text(file?.name ?: "No PDF selected",color=Muted,fontSize=10.sp,maxLines=1)
+            }
+            if(editing) Text("\${overlays.size} items",color=Accent,fontSize=11.sp)
         }
-        Text(file?.name ?: "No PDF selected", color = Muted, fontSize = 12.sp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = { if (pageIndex > 0) { pageIndex--; positionChosen = false } }) { Icon(Icons.Default.ChevronLeft, null, tint = Accent) }
-            Text(if (pageCount > 0) "Page ${pageIndex + 1} of ${pageCount}" else "Loading page…", color = Color.White)
-            IconButton(onClick = { if (pageIndex + 1 < pageCount) { pageIndex++; positionChosen = false } }) { Icon(Icons.Default.ChevronRight, null, tint = Accent) }
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.Center,modifier=Modifier.fillMaxWidth()) {
+            IconButton(onClick={if(pageIndex>0) pageIndex--}) { Icon(Icons.Default.ChevronLeft,null,tint=Accent) }
+            Text(if(pageCount>0) "Page \${pageIndex+1} of $pageCount" else "Loading…",color=Color.White)
+            IconButton(onClick={if(pageIndex+1<pageCount) pageIndex++}) { Icon(Icons.Default.ChevronRight,null,tint=Accent) }
         }
-        if (editing) {
-            OutlinedTextField(
-                value = textDraft,
-                onValueChange = { textDraft = it },
-                label = { Text("Text to add") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 1,
-                maxLines = 3
-            )
-            OutlinedTextField(
-                value = fontSize,
-                onValueChange = { fontSize = it.filter { c -> c.isDigit() || c == '.' }.take(5) },
-                label = { Text("Font size (6–72)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            Text("Tap the page to choose where this text will be placed.", color = Accent, fontSize = 12.sp)
-        }
-        Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF202A3D), RoundedCornerShape(12.dp)).padding(5.dp), contentAlignment = Alignment.Center) {
-            val current = bitmap
-            if (current != null) {
-                Image(current.asImageBitmap(), contentDescription = "PDF page ${pageIndex + 1}", modifier = Modifier.fillMaxWidth().wrapContentHeight().pointerInput(editing, current, pageWidth, pageHeight) {
-                    detectTapGestures { offset ->
-                        if (editing) {
-                            val sx = pageWidth / size.width.coerceAtLeast(1)
-                            val sy = pageHeight / size.height.coerceAtLeast(1)
-                            tapX = (offset.x * sx).coerceIn(0f, pageWidth - 4f)
-                            tapY = (pageHeight - offset.y * sy).coerceIn(4f, pageHeight - 4f)
-                            positionChosen = true
-                            onMessage("Text position selected on page ${pageIndex + 1}.")
+        Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF090711),RoundedCornerShape(14.dp)).padding(6.dp),contentAlignment=Alignment.Center) {
+            val current=bitmap
+            if(current!=null) BoxWithConstraints(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                val scale=minOf(maxWidth.value/pageWidth.coerceAtLeast(1f),maxHeight.value/pageHeight.coerceAtLeast(1f))
+                val dw=(pageWidth*scale).dp; val dh=(pageHeight*scale).dp
+                Box(Modifier.width(dw).height(dh)) {
+                    Image(current.asImageBitmap(),contentDescription="PDF page",modifier=Modifier.fillMaxSize())
+                    if(editing) {
+                        Box(Modifier.fillMaxSize().pointerInput(pageIndex,dw,dh) {
+                            detectTapGestures { p ->
+                                if(draft.isNotBlank()) {
+                                    overlays=overlays+PdfTextOverlay(pageIndex,(p.x/size.width).coerceIn(0f,.95f),(p.y/size.height).coerceIn(0f,.95f),draft,fontSize,fontKey,textColor)
+                                    selected=overlays.lastIndex; draft=""
+                                    onMessage("Text placed. Tap Update selected to edit it, or drag it to move it.")
+                                } else onMessage("Enter text first, then tap the page to place it.")
+                            }
+                        })
+                        overlays.forEachIndexed { i,item ->
+                            if(item.page==pageIndex) {
+                                if(item.signaturePath==null) {
+                                    Text(item.text,color=Color(item.colorArgb),fontSize=item.fontSize.sp,
+                                        fontWeight=if(item.fontKey.endsWith("bold")) FontWeight.Bold else FontWeight.Normal,
+                                        fontFamily=when { item.fontKey.startsWith("serif")->androidx.compose.ui.text.font.FontFamily.Serif; item.fontKey=="mono"->androidx.compose.ui.text.font.FontFamily.Monospace; else->androidx.compose.ui.text.font.FontFamily.SansSerif },
+                                        modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp)
+                                            .background(if(selected==i) Color(0x447C3AED) else Color.Transparent)
+                                            .pointerInput(i,dw,dh) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
+                                                c.consume(); val list=overlays.toMutableList(); val old=list[i]
+                                                list[i]=old.copy(x=(old.x+d.x/size.width.coerceAtLeast(1)).coerceIn(0f,.92f),y=(old.y+d.y/size.height.coerceAtLeast(1)).coerceIn(0f,.96f)); overlays=list
+                                            }) }.clickable { selected=i }
+                                    )
+                                } else {
+                                    val sig=remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
+                                    if(sig!=null) Image(sig.asImageBitmap(),contentDescription="Signature",
+                                        modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp).width(105.dp).height(42.dp)
+                                            .pointerInput(i,dw,dh) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
+                                                c.consume(); val list=overlays.toMutableList(); val old=list[i]
+                                                list[i]=old.copy(x=(old.x+d.x/size.width.coerceAtLeast(1)).coerceIn(0f,.85f),y=(old.y+d.y/size.height.coerceAtLeast(1)).coerceIn(0f,.95f)); overlays=list
+                                            }) }.clickable { selected=i }
+                                    )
+                                }
+                            }
                         }
                     }
-                })
-            } else Text("Rendering PDF page…", color = Muted)
+                }
+            } else Text("Rendering PDF…",color=Muted)
         }
-        if (editing) {
-            Text("Position: ${tapX.toInt()}, ${tapY.toInt()} PDF points", color = Muted, fontSize = 11.sp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        if (!positionChosen) onMessage("Tap the PDF page first.")
-                        else if (textDraft.isBlank()) onMessage("Enter the text to add.")
-                        else {
-                            val size = (fontSize.toFloatOrNull() ?: 14f).coerceIn(6f, 72f)
-                            overlays = overlays + PdfTextOverlay(pageIndex, tapX, tapY, textDraft.trim(), size)
-                            textDraft = ""
-                            positionChosen = false
-                            onMessage("Added text item. Total: ${overlays.size}")
-                        }
-                    },
-                    enabled = bitmap != null && positionChosen,
-                    modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Default.Add, null); Text("Add text") }
-                OutlinedButton(
-                    onClick = {
-                        if (overlays.isNotEmpty()) {
-                            overlays = overlays.dropLast(1)
-                            onMessage("Removed the last text item.")
-                        }
-                    },
-                    enabled = overlays.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Default.Undo, null); Text("Undo") }
+        if(editing) Column(Modifier.fillMaxWidth().background(Color(0xFF191020),RoundedCornerShape(14.dp)).padding(9.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+            OutlinedTextField(draft,{draft=it},label={Text("Text to add or edit")},modifier=Modifier.fillMaxWidth(),maxLines=2)
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Box {
+                    OutlinedButton(onClick={fontMenu=true}) { Text(when(fontKey){"serif"->"Serif";"serif_bold"->"Serif Bold";"mono"->"Mono";"sans_bold"->"Sans Bold";else->"Sans"}) }
+                    DropdownMenu(expanded=fontMenu,onDismissRequest={fontMenu=false}) {
+                        listOf("sans" to "Sans","sans_bold" to "Sans Bold","serif" to "Serif","serif_bold" to "Serif Bold","mono" to "Monospace").forEach { (k,v)->DropdownMenuItem(text={Text(v)},onClick={fontKey=k;fontMenu=false}) }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("\${fontSize.toInt()} pt",color=Color.White,fontSize=12.sp)
+                Slider(value=fontSize,onValueChange={fontSize=it},valueRange=6f..48f,modifier=Modifier.weight(1f))
             }
-            Text("${overlays.size} text item(s) queued across pages", color = Muted, fontSize = 11.sp)
-            Button(
-                onClick = {
-                    if (overlays.isEmpty()) onMessage("Add at least one text item first.")
-                    else onSave(overlays)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = file != null && bitmap != null && overlays.isNotEmpty()
-            ) {
-                Icon(Icons.Default.Save, null); Text("Save edited copy")
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Text("Colour",color=Muted,fontSize=11.sp)
+                listOf(android.graphics.Color.BLACK,android.graphics.Color.rgb(35,75,190),android.graphics.Color.rgb(130,40,190),android.graphics.Color.RED).forEach { c ->
+                    Box(Modifier.padding(horizontal=5.dp).size(22.dp).background(Color(c),RoundedCornerShape(50)).clickable { textColor=c })
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick={strokes=emptyList();activeStroke=emptyList();signatureDialog=true}) { Icon(Icons.Default.Draw,null);Text("Sign") }
             }
-        } else Text("Read-only preview. Open Edit to add text.", color = Muted, fontSize = 12.sp)
+            Text("Tap the page to place new text. Drag text or a signature to reposition it.",color=Muted,fontSize=10.sp)
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick={
+                    if(selected in overlays.indices && overlays[selected].signaturePath==null) {
+                        val list=overlays.toMutableList(); list[selected]=list[selected].copy(text=draft,fontSize=fontSize,fontKey=fontKey,colorArgb=textColor); overlays=list
+                        onMessage("Selected text updated.")
+                    } else onMessage("Select a text item to update, or tap the page to add one.")
+                },modifier=Modifier.weight(1f)) { Text("Update selected") }
+                OutlinedButton(onClick={
+                    if(selected in overlays.indices) { overlays=overlays.toMutableList().also{it.removeAt(selected)};selected=-1 }
+                    else if(overlays.isNotEmpty()) overlays=overlays.dropLast(1)
+                },enabled=overlays.isNotEmpty(),modifier=Modifier.weight(1f)) { Icon(Icons.Default.Delete,null);Text("Remove") }
+            }
+            Button(onClick={if(overlays.isEmpty()) onMessage("Add text or a signature first.") else onSave(overlays)},
+                modifier=Modifier.fillMaxWidth(),enabled=file!=null && bitmap!=null && overlays.isNotEmpty()) { Icon(Icons.Default.Save,null);Text("Save edited PDF copy") }
+        } else Text("Read-only preview. Open Edit to add text and signatures.",color=Muted,fontSize=12.sp)
     }
+    if(signatureDialog) AlertDialog(
+        onDismissRequest={signatureDialog=false},
+        title={Text("Draw signature",color=Color.White)},
+        text={
+            Column {
+                Text("Draw with your finger. The PNG background stays transparent.",color=Muted,fontSize=11.sp)
+                androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(160.dp).background(Color.White,RoundedCornerShape(8.dp))
+                    .pointerInput(strokes,activeStroke) {
+                        detectDragGestures(onDragStart={activeStroke=listOf(it)},onDrag={c,_->activeStroke=activeStroke+c.position},
+                            onDragEnd={if(activeStroke.isNotEmpty()){strokes=strokes+listOf(activeStroke);activeStroke=emptyList()}})
+                    }) {
+                    padSize=size
+                    (strokes+listOf(activeStroke)).forEach { pts->pts.zipWithNext().forEach{(p1,p2)->drawLine(Color.Black,p1,p2,strokeWidth=4.dp.toPx(),cap=androidx.compose.ui.graphics.StrokeCap.Round)} }
+                }
+                TextButton(onClick={strokes=emptyList();activeStroke=emptyList()}) { Text("Clear signature") }
+            }
+        },
+        confirmButton={TextButton(onClick={
+            if(strokes.isEmpty()||padSize.width<=0f) onMessage("Draw your signature first.")
+            else runCatching {
+                val bmp=Bitmap.createBitmap(padSize.width.toInt().coerceAtLeast(1),padSize.height.toInt().coerceAtLeast(1),Bitmap.Config.ARGB_8888)
+                val canvas=android.graphics.Canvas(bmp)
+                val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.BLACK;style=android.graphics.Paint.Style.STROKE;strokeWidth=4f;strokeCap=android.graphics.Paint.Cap.ROUND;strokeJoin=android.graphics.Paint.Join.ROUND}
+                strokes.forEach{pts->val path=android.graphics.Path();if(pts.size==1)canvas.drawCircle(pts[0].x,pts[0].y,2f,paint) else {path.moveTo(pts.first().x,pts.first().y);pts.drop(1).forEach{path.lineTo(it.x,it.y)};canvas.drawPath(path,paint)}}
+                val dest=File(context.cacheDir,"xdocs_signature_\${System.currentTimeMillis()}.png")
+                FileOutputStream(dest).use{bmp.compress(Bitmap.CompressFormat.PNG,100,it)};bmp.recycle()
+                overlays=overlays+PdfTextOverlay(pageIndex,.08f,.82f,"",12f,signaturePath=dest.absolutePath);selected=overlays.lastIndex
+                signatureDialog=false;onMessage("Transparent signature added. Drag it into position.")
+            }.onFailure{onMessage("Signature creation failed: \${it.message}")}
+        }){Text("Use signature")}},
+        dismissButton={TextButton(onClick={signatureDialog=false}){Text("Cancel")}},
+        containerColor=Color(0xFF1A1024)
+    )
 }
-
 @Composable
 private fun Action(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(Panel, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -515,32 +554,32 @@ private fun EmptyState(title: String, subtitle: String) {
 }
 
 private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, directory: File): File {
-    require(overlays.isNotEmpty()) { "Add at least one text item." }
-    val output = uniqueFile(directory, "${source.nameWithoutExtension}_edited.pdf")
+    require(overlays.isNotEmpty()) { "Add at least one item." }
+    val output=uniqueFile(directory,"\${source.nameWithoutExtension}_edited.pdf")
     PDDocument.load(source).use { doc ->
-        val embeddedFont = runCatching {
-            val fontFile = File("/system/fonts/Roboto-Regular.ttf")
-            if (fontFile.isFile) com.tom_roush.pdfbox.pdmodel.font.PDType0Font.load(doc, fontFile) else null
-        }.getOrNull()
-        val font = embeddedFont ?: PDType1Font.HELVETICA
         overlays.forEach { item ->
-            require(item.page in 0 until doc.numberOfPages) { "Page ${item.page + 1} does not exist." }
-            val page = doc.getPage(item.page)
-            val px = item.x.coerceIn(0f, page.mediaBox.width - 2f)
-            val py = item.y.coerceIn(item.fontSize, page.mediaBox.height - 2f)
-            PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { stream ->
-                stream.beginText()
-                stream.setFont(font, item.fontSize)
-                stream.setNonStrokingColor(0, 0, 0)
-                stream.newLineAtOffset(px, py)
-                item.text.split('\n').take(40).forEachIndexed { index, line ->
-                    if (index > 0) stream.newLineAtOffset(0f, -item.fontSize * 1.2f)
-                    val printable = if (embeddedFont != null) line.take(2000) else line.map { c ->
-                        if (c.code in 32..255) c else '?'
-                    }.joinToString("").take(2000)
-                    stream.showText(printable)
+            require(item.page in 0 until doc.numberOfPages) { "Page \${item.page+1} does not exist." }
+            val page=doc.getPage(item.page)
+            if(item.signaturePath!=null) {
+                val bmp=BitmapFactory.decodeFile(item.signaturePath) ?: error("Could not load signature.")
+                val image=LosslessFactory.createFromImage(doc,bmp)
+                val x=item.x.coerceIn(0f,.95f)*page.mediaBox.width
+                val top=item.y.coerceIn(0f,.95f)*page.mediaBox.height
+                val width=page.mediaBox.width*.28f
+                val height=width*bmp.height.toFloat()/bmp.width.coerceAtLeast(1)
+                PDPageContentStream(doc,page,PDPageContentStream.AppendMode.APPEND,true,true).use{it.drawImage(image,x,(page.mediaBox.height-top-height).coerceAtLeast(0f),width,height)}
+                bmp.recycle()
+            } else {
+                val font=when(item.fontKey){"serif"->PDType1Font.TIMES_ROMAN;"serif_bold"->PDType1Font.TIMES_BOLD;"mono"->PDType1Font.COURIER;"sans_bold"->PDType1Font.HELVETICA_BOLD;else->PDType1Font.HELVETICA}
+                val x=item.x.coerceIn(0f,.98f)*page.mediaBox.width
+                val y=(page.mediaBox.height-item.y.coerceIn(0f,.98f)*page.mediaBox.height-item.fontSize).coerceAtLeast(2f)
+                PDPageContentStream(doc,page,PDPageContentStream.AppendMode.APPEND,true,true).use{stream->
+                    stream.beginText();stream.setFont(font,item.fontSize.coerceIn(6f,48f))
+                    stream.setNonStrokingColor(android.graphics.Color.red(item.colorArgb),android.graphics.Color.green(item.colorArgb),android.graphics.Color.blue(item.colorArgb))
+                    stream.newLineAtOffset(x,y)
+                    item.text.split('\n').take(40).forEachIndexed{index,line->if(index>0)stream.newLineAtOffset(0f,-item.fontSize*1.2f);stream.showText(line.filter{it.code in 32..255}.take(2000))}
+                    stream.endText()
                 }
-                stream.endText()
             }
         }
         doc.save(output)
