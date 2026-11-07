@@ -9,7 +9,8 @@ X DOCS is a Kotlin/Jetpack Compose Android app. It does not run Flask or use a W
 - Create folders; browse folder contents; rename, move and delete files.
 - Export any imported file through Android's document picker.
 - PDF page viewer with page navigation.
-- PDF editor with tap-to-position text, multiple text items across pages, undo-last-item, font-size selection and saving a separate edited PDF copy.
+- PDF editor with a live page preview, draggable text and signature overlays, editable added text before saving, font family presets (sans, serif and monospace), bold presets, a live size slider, text colours, and transparent finger-drawn signature PNGs.
+- Added text and signatures are saved as a separate edited PDF copy; existing PDF text is not rewritten. The editing canvas is offline and uses local files only.
 - Camera scanning using the full-size camera capture intent; capture multiple pages and combine them into a PDF.
 - Import gallery images and convert multiple images into a multi-page PDF.
 - Merge two or more PDFs in picker selection order.
