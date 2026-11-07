@@ -400,7 +400,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                 Triple(PDFRenderer(doc).renderImage(idx,1.2f,ImageType.RGB),doc.getPage(idx).mediaBox.width,doc.getPage(idx).mediaBox.height) to doc.numberOfPages
             } }
         }.onSuccess { r -> bitmap=r.first.first; pageWidth=r.first.second; pageHeight=r.first.third; pageCount=r.second }
-            .onFailure { onMessage("Could not open PDF: \${it.message}") }
+            .onFailure { onMessage("Could not open PDF: ${it.message}") }
     }
     Column(Modifier.fillMaxSize()) {
         Row(verticalAlignment=Alignment.CenterVertically) {
@@ -409,11 +409,11 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                 Text(if(editing) "KAGE PDF STUDIO" else "PDF Viewer",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold)
                 Text(file?.name ?: "No PDF selected",color=Muted,fontSize=10.sp,maxLines=1)
             }
-            if(editing) Text("\${overlays.size} items",color=Accent,fontSize=11.sp)
+            if(editing) Text("${overlays.size} items",color=Accent,fontSize=11.sp)
         }
         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.Center,modifier=Modifier.fillMaxWidth()) {
             IconButton(onClick={if(pageIndex>0) pageIndex--}) { Icon(Icons.Default.ChevronLeft,null,tint=Accent) }
-            Text(if(pageCount>0) "Page \${pageIndex+1} of $pageCount" else "Loading…",color=Color.White)
+            Text(if(pageCount>0) "Page ${pageIndex+1} of $pageCount" else "Loading…",color=Color.White)
             IconButton(onClick={if(pageIndex+1<pageCount) pageIndex++}) { Icon(Icons.Default.ChevronRight,null,tint=Accent) }
         }
         Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF090711),RoundedCornerShape(14.dp)).padding(6.dp),contentAlignment=Alignment.Center) {
@@ -472,7 +472,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                Text("\${fontSize.toInt()} pt",color=Color.White,fontSize=12.sp)
+                Text("${fontSize.toInt()} pt",color=Color.White,fontSize=12.sp)
                 Slider(value=fontSize,onValueChange={fontSize=it},valueRange=6f..48f,modifier=Modifier.weight(1f))
             }
             Row(verticalAlignment=Alignment.CenterVertically) {
@@ -524,11 +524,11 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                 val canvas=android.graphics.Canvas(bmp)
                 val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.BLACK;style=android.graphics.Paint.Style.STROKE;strokeWidth=4f;strokeCap=android.graphics.Paint.Cap.ROUND;strokeJoin=android.graphics.Paint.Join.ROUND}
                 strokes.forEach{pts->val path=android.graphics.Path();if(pts.size==1)canvas.drawCircle(pts[0].x,pts[0].y,2f,paint) else {path.moveTo(pts.first().x,pts.first().y);pts.drop(1).forEach{path.lineTo(it.x,it.y)};canvas.drawPath(path,paint)}}
-                val dest=File(context.cacheDir,"xdocs_signature_\${System.currentTimeMillis()}.png")
+                val dest=File(context.cacheDir,"xdocs_signature_${System.currentTimeMillis()}.png")
                 FileOutputStream(dest).use{bmp.compress(Bitmap.CompressFormat.PNG,100,it)};bmp.recycle()
                 overlays=overlays+PdfTextOverlay(pageIndex,.08f,.82f,"",12f,signaturePath=dest.absolutePath);selected=overlays.lastIndex
                 signatureDialog=false;onMessage("Transparent signature added. Drag it into position.")
-            }.onFailure{onMessage("Signature creation failed: \${it.message}")}
+            }.onFailure{onMessage("Signature creation failed: ${it.message}")}
         }){Text("Use signature")}},
         dismissButton={TextButton(onClick={signatureDialog=false}){Text("Cancel")}},
         containerColor=Color(0xFF1A1024)
@@ -556,10 +556,10 @@ private fun EmptyState(title: String, subtitle: String) {
 
 private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, directory: File): File {
     require(overlays.isNotEmpty()) { "Add at least one item." }
-    val output=uniqueFile(directory,"\${source.nameWithoutExtension}_edited.pdf")
+    val output=uniqueFile(directory,"${source.nameWithoutExtension}_edited.pdf")
     PDDocument.load(source).use { doc ->
         overlays.forEach { item ->
-            require(item.page in 0 until doc.numberOfPages) { "Page \${item.page+1} does not exist." }
+            require(item.page in 0 until doc.numberOfPages) { "Page ${item.page+1} does not exist." }
             val page=doc.getPage(item.page)
             if(item.signaturePath!=null) {
                 val bmp=BitmapFactory.decodeFile(item.signaturePath) ?: error("Could not load signature.")
