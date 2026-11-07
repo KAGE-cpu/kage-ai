@@ -444,7 +444,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                                             .pointerInput(i,dw,dh) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
                                                 c.consume(); val list=overlays.toMutableList(); val old=list[i]
                                                 list[i]=old.copy(x=(old.x+d.x/size.width.coerceAtLeast(1)).coerceIn(0f,.92f),y=(old.y+d.y/size.height.coerceAtLeast(1)).coerceIn(0f,.96f)); overlays=list
-                                            }) }.clickable { selected=i }
+                                            }) }.clickable { selected=i; draft=item.text; fontSize=item.fontSize; fontKey=item.fontKey; textColor=item.colorArgb }
                                     )
                                 } else {
                                     val sig=remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
