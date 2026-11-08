@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,7 +61,7 @@ class MainActivity : ComponentActivity() {
         setContent { XDocsApp(File(filesDir, "XDocs").apply { mkdirs() }) }
     }
 }
-private enum class Page { HOME, FILES, SCAN, CONVERT, VIEWER, EDITOR }
+private enum class Page { HOME, FILES, SCAN, CONVERT, VIEWER, EDITOR, IMAGE_EDITOR }
 
 private data class PdfTextOverlay(
     val page: Int, val x: Float, val y: Float, val text: String, val fontSize: Float,
@@ -184,7 +185,7 @@ private fun XDocsApp(root: File) {
         Scaffold(
             containerColor = Ink,
             bottomBar = {
-                if (page != Page.VIEWER && page != Page.EDITOR) NavigationBar(containerColor = Color(0xFF120B1A)) {
+                if (page != Page.VIEWER && page != Page.EDITOR && page != Page.IMAGE_EDITOR) NavigationBar(containerColor = Color(0xFF120B1A)) {
                     listOf(Page.HOME to Icons.Default.Home, Page.FILES to Icons.Default.Folder, Page.SCAN to Icons.Default.CameraAlt, Page.CONVERT to Icons.Default.Transform).forEach { (p, icon) ->
                         NavigationBarItem(selected = page == p, onClick = { page = p; if (p != Page.FILES) folder = null }, icon = { Icon(icon, null) }, label = { Text(p.name.lowercase().replaceFirstChar { it.uppercase() }) })
                     }
@@ -209,7 +210,8 @@ private fun XDocsApp(root: File) {
                         Action("My Documents", "Browse, rename, move and organise files", Icons.Default.FolderOpen) { page = Page.FILES; folder = null }
                         Action("Import files", "Copy documents and other files into X DOCS", Icons.Default.UploadFile) { importFiles.launch(arrayOf("*/*")) }
                         Action("Open PDF viewer", "Read and navigate PDF pages", Icons.Default.MenuBook) { if (selected?.extension.equals("pdf", true)) page = Page.VIEWER else { message = "Select a PDF first."; page = Page.FILES } }
-                        Action("PDF editor", "Tap the page to position new text", Icons.Default.Edit) { if (selected?.extension.equals("pdf", true)) page = Page.EDITOR else { message = "Select a PDF first."; page = Page.FILES } }
+                        Action("PDF editor", "Add precisely positioned text and signatures", Icons.Default.Edit) { if (selected?.extension.equals("pdf", true)) page = Page.EDITOR else { message = "Select a PDF first."; page = Page.FILES } }
+                        Action("Image editor", "Add movable text and signatures to pictures", Icons.Default.Brush) { if (selected?.extension?.lowercase() in listOf("png","jpg","jpeg","webp","bmp")) page = Page.IMAGE_EDITOR else { message = "Select an image first."; page = Page.FILES } }
                         Action("Scan documents", "Capture multiple camera pages into one PDF", Icons.Default.CameraAlt) { page = Page.SCAN }
                         Action("Convert and merge", "Image-to-PDF, PDF merge and PDF-to-image", Icons.Default.Transform) { page = Page.CONVERT }
                     }
@@ -226,12 +228,13 @@ private fun XDocsApp(root: File) {
                                     Icon(if (item.isDirectory) Icons.Default.Folder else if (item.extension.equals("pdf", true)) Icons.Default.PictureAsPdf else Icons.Default.InsertDriveFile, null, tint = Accent)
                                     Column(Modifier.weight(1f).padding(start = 8.dp).clickable {
                                         if (item.isDirectory) folder = item.name
-                                        else { selected = item; if (item.extension.equals("pdf", true)) page = Page.VIEWER else message = item.name }
+                                        else { selected = item; if (item.extension.equals("pdf", true)) page = Page.VIEWER else if (item.extension.lowercase() in listOf("png","jpg","jpeg","webp","bmp")) page = Page.IMAGE_EDITOR else message = item.name }
                                     }) {
                                         Text(item.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                         Text(if (item.isDirectory) "Folder" else "${item.length() / 1024} KB", color = Muted, fontSize = 11.sp)
                                     }
-                                    if (!item.isDirectory && item.extension.equals("pdf", true)) IconButton(onClick = { selected = item; page = Page.EDITOR }) { Icon(Icons.Default.Edit, "Edit", tint = Accent) }
+                                    if (!item.isDirectory && item.extension.equals("pdf", true)) IconButton(onClick = { selected = item; page = Page.EDITOR }) { Icon(Icons.Default.Edit, "Edit PDF", tint = Accent) }
+                                    if (!item.isDirectory && item.extension.lowercase() in listOf("png","jpg","jpeg","webp","bmp")) IconButton(onClick = { selected = item; page = Page.IMAGE_EDITOR }) { Icon(Icons.Default.Brush, "Edit image", tint = Accent) }
                                     IconButton(onClick = { selected = item; renameValue = item.name; renameDialog = true }) { Icon(Icons.Default.DriveFileRenameOutline, "Rename", tint = Muted) }
                                     if (!item.isDirectory) IconButton(onClick = { selected = item; moveTarget = ""; moveDialog = true }) { Icon(Icons.Default.DriveFileMove, "Move", tint = Muted) }
                                     if (!item.isDirectory) IconButton(onClick = { selected = item; exportSelected.launch(item.name) }) { Icon(Icons.Default.FileDownload, "Export", tint = Accent) }
@@ -292,12 +295,22 @@ private fun XDocsApp(root: File) {
                         onSave = { textOverlays ->
                             val source = selected ?: error("No PDF selected")
                             val output = addTextToPdf(source, textOverlays, source.parentFile ?: root)
-                            selected = output; refresh++; message = "Saved edited copy with ${textOverlays.size} text item(s): ${output.name}"; page = Page.FILES
+                            selected = output; refresh++; message = "Saved edited copy with ${textOverlays.size} item(s): ${output.name}"; page = Page.FILES
+                        },
+                        onMessage = { message = it }
+                    )
+                    Page.IMAGE_EDITOR -> ImageWorkspace(
+                        file = selected,
+                        onBack = { page = Page.FILES },
+                        onSave = { imageOverlays ->
+                            val source = selected ?: error("No image selected")
+                            val output = renderImageWithOverlays(source, imageOverlays, source.parentFile ?: root)
+                            selected = output; refresh++; message = "Saved edited image: ${output.name}"; page = Page.FILES
                         },
                         onMessage = { message = it }
                     )
                 }
-                if (page != Page.VIEWER && page != Page.EDITOR) {
+                if (page != Page.VIEWER && page != Page.EDITOR && page != Page.IMAGE_EDITOR) {
                     Spacer(Modifier.height(8.dp))
                     Text(message, color = Accent, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
                 }
@@ -421,6 +434,9 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
             if(current!=null) BoxWithConstraints(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                 val scale=minOf(maxWidth.value/pageWidth.coerceAtLeast(1f),maxHeight.value/pageHeight.coerceAtLeast(1f))
                 val dw=(pageWidth*scale).dp; val dh=(pageHeight*scale).dp
+                val pageWidthPx = with(LocalDensity.current) { dw.toPx() }
+                val pageHeightPx = with(LocalDensity.current) { dh.toPx() }
+                val previewFontScale = LocalDensity.current.fontScale
                 Box(Modifier.width(dw).height(dh)) {
                     Image(current.asImageBitmap(),contentDescription="PDF page",modifier=Modifier.fillMaxSize())
                     if(editing) {
@@ -436,23 +452,24 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                         overlays.forEachIndexed { i,item ->
                             if(item.page==pageIndex) {
                                 if(item.signaturePath==null) {
-                                    Text(item.text,color=Color(item.colorArgb),fontSize=item.fontSize.sp,
+                                    Text(item.text,color=Color(item.colorArgb),fontSize=(item.fontSize*dw.value/pageWidth.coerceAtLeast(1f)/previewFontScale).sp,
                                         fontWeight=if(item.fontKey.endsWith("bold")) FontWeight.Bold else FontWeight.Normal,
                                         fontFamily=when { item.fontKey.startsWith("serif")->androidx.compose.ui.text.font.FontFamily.Serif; item.fontKey=="mono"->androidx.compose.ui.text.font.FontFamily.Monospace; else->androidx.compose.ui.text.font.FontFamily.SansSerif },
                                         modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp)
+                                            .graphicsLayer { translationX = -size.width / 2f }
                                             .background(if(selected==i) Color(0x447C3AED) else Color.Transparent)
-                                            .pointerInput(i,dw,dh) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
+                                            .pointerInput(i,pageWidthPx,pageHeightPx) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
                                                 c.consume(); val list=overlays.toMutableList(); val old=list[i]
-                                                list[i]=old.copy(x=(old.x+d.x/size.width.coerceAtLeast(1)).coerceIn(0f,.92f),y=(old.y+d.y/size.height.coerceAtLeast(1)).coerceIn(0f,.96f)); overlays=list
+                                                list[i]=old.copy(x=(old.x+d.x/pageWidthPx.coerceAtLeast(1f)).coerceIn(0f,1f),y=(old.y+d.y/pageHeightPx.coerceAtLeast(1f)).coerceIn(0f,1f)); overlays=list
                                             }) }.clickable { selected=i; draft=item.text; fontSize=item.fontSize; fontKey=item.fontKey; textColor=item.colorArgb }
                                     )
                                 } else {
                                     val sig=remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
                                     if(sig!=null) Image(sig.asImageBitmap(),contentDescription="Signature",
                                         modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp).width(105.dp).height(42.dp)
-                                            .pointerInput(i,dw,dh) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
+                                            .pointerInput(i,pageWidthPx,pageHeightPx) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
                                                 c.consume(); val list=overlays.toMutableList(); val old=list[i]
-                                                list[i]=old.copy(x=(old.x+d.x/size.width.coerceAtLeast(1)).coerceIn(0f,.85f),y=(old.y+d.y/size.height.coerceAtLeast(1)).coerceIn(0f,.95f)); overlays=list
+                                                list[i]=old.copy(x=(old.x+d.x/pageWidthPx.coerceAtLeast(1f)).coerceIn(0f,1f),y=(old.y+d.y/pageHeightPx.coerceAtLeast(1f)).coerceIn(0f,1f)); overlays=list
                                             }) }.clickable { selected=i }
                                     )
                                 }
@@ -507,7 +524,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
             Column {
                 Text("Draw with your finger. The PNG background stays transparent.",color=Muted,fontSize=11.sp)
                 androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(160.dp).background(Color.White,RoundedCornerShape(8.dp))
-                    .pointerInput(strokes,activeStroke) {
+                     .pointerInput(Unit) {
                         detectDragGestures(onDragStart={activeStroke=listOf(it)},onDrag={c,_->activeStroke=activeStroke+c.position},
                             onDragEnd={if(activeStroke.isNotEmpty()){strokes=strokes+listOf(activeStroke);activeStroke=emptyList()}})
                     }) {
@@ -534,6 +551,242 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
         containerColor=Color(0xFF1A1024)
     )
 }
+
+@Composable
+private fun ImageWorkspace(file: File?, onBack: () -> Unit, onSave: (List<PdfTextOverlay>) -> Unit, onMessage: (String) -> Unit) {
+    val context = LocalContext.current
+    var bitmap by remember(file) { mutableStateOf<Bitmap?>(null) }
+    var draft by remember(file) { mutableStateOf("") }
+    var fontSize by remember(file) { mutableFloatStateOf(28f) }
+    var fontKey by remember(file) { mutableStateOf("sans") }
+    var textColor by remember(file) { mutableIntStateOf(android.graphics.Color.BLACK) }
+    var overlays by remember(file) { mutableStateOf(emptyList<PdfTextOverlay>()) }
+    var selected by remember(file) { mutableIntStateOf(-1) }
+    var signatureDialog by remember { mutableStateOf(false) }
+    var strokes by remember { mutableStateOf<List<List<androidx.compose.ui.geometry.Offset>>>(emptyList()) }
+    var activeStroke by remember { mutableStateOf(emptyList<androidx.compose.ui.geometry.Offset>()) }
+    var padSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+
+    LaunchedEffect(file) {
+        bitmap?.recycle(); bitmap = null
+        if (file != null) withContext(Dispatchers.IO) {
+            runCatching { decodeSampledBitmap(file, 2400) }
+        }.onSuccess { bitmap = it }.onFailure { onMessage("Could not open image: ${it.message}") }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null); Text("Back") }
+            Column(Modifier.weight(1f)) {
+                Text("KAGE IMAGE STUDIO", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(file?.name ?: "No image selected", color = Muted, fontSize = 10.sp, maxLines = 1)
+            }
+            Text("${overlays.size} items", color = Accent, fontSize = 11.sp)
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF090711), RoundedCornerShape(14.dp)).padding(6.dp), contentAlignment = Alignment.Center) {
+            val image = bitmap
+            if (image != null) BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val scale = minOf(maxWidth.value / image.width.coerceAtLeast(1), maxHeight.value / image.height.coerceAtLeast(1))
+                val dw = (image.width * scale).dp
+                val dh = (image.height * scale).dp
+                val widthPx = with(LocalDensity.current) { dw.toPx() }
+                val heightPx = with(LocalDensity.current) { dh.toPx() }
+                val fontScale = LocalDensity.current.fontScale
+                Box(Modifier.width(dw).height(dh)) {
+                    Image(image.asImageBitmap(), contentDescription = "Image being edited", modifier = Modifier.fillMaxSize())
+                    Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                        detectTapGestures { p ->
+                            if (draft.isNotBlank()) {
+                                overlays = overlays + PdfTextOverlay(0, (p.x / size.width).coerceIn(0f,1f), (p.y / size.height).coerceIn(0f,1f), draft, fontSize, fontKey, textColor)
+                                selected = overlays.lastIndex
+                                draft = ""
+                                onMessage("Text added. Drag it to position it.")
+                            } else onMessage("Enter text first, then tap the image.")
+                        }
+                    })
+                    overlays.forEachIndexed { index, item ->
+                        if (item.signaturePath == null) {
+                            Text(item.text, color = Color(item.colorArgb),
+                                fontSize = (item.fontSize * dw.value / image.width.coerceAtLeast(1) / fontScale).sp,
+                                fontWeight = if (item.fontKey.endsWith("bold")) FontWeight.Bold else FontWeight.Normal,
+                                fontFamily = when {
+                                    item.fontKey.startsWith("serif") -> androidx.compose.ui.text.font.FontFamily.Serif
+                                    item.fontKey == "mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
+                                    else -> androidx.compose.ui.text.font.FontFamily.SansSerif
+                                },
+                                modifier = Modifier.offset(x = (item.x * dw.value).dp, y = (item.y * dh.value).dp)
+                                    .graphicsLayer { translationX = -size.width / 2f }
+                                    .background(if (selected == index) Color(0x447C3AED) else Color.Transparent)
+                                    .pointerInput(index, widthPx, heightPx) {
+                                        detectDragGestures(onDragStart = { selected = index }, onDrag = { change, delta ->
+                                            change.consume()
+                                            val copy = overlays.toMutableList()
+                                            val old = copy[index]
+                                            copy[index] = old.copy(
+                                                x = (old.x + delta.x / widthPx.coerceAtLeast(1f)).coerceIn(0f,1f),
+                                                y = (old.y + delta.y / heightPx.coerceAtLeast(1f)).coerceIn(0f,1f)
+                                            )
+                                            overlays = copy
+                                        })
+                                    }
+                                    .clickable { selected = index; draft = item.text; fontSize = item.fontSize; fontKey = item.fontKey; textColor = item.colorArgb }
+                            )
+                        } else {
+                            val sig = remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
+                            if (sig != null) Image(sig.asImageBitmap(), contentDescription = "Signature",
+                                modifier = Modifier.offset(x = (item.x * dw.value).dp, y = (item.y * dh.value).dp)
+                                    .width(105.dp).height(42.dp)
+                                    .pointerInput(index, widthPx, heightPx) {
+                                        detectDragGestures(onDragStart = { selected = index }, onDrag = { change, delta ->
+                                            change.consume()
+                                            val copy = overlays.toMutableList()
+                                            val old = copy[index]
+                                            copy[index] = old.copy(
+                                                x = (old.x + delta.x / widthPx.coerceAtLeast(1f)).coerceIn(0f,1f),
+                                                y = (old.y + delta.y / heightPx.coerceAtLeast(1f)).coerceIn(0f,1f)
+                                            )
+                                            overlays = copy
+                                        })
+                                    }.clickable { selected = index }
+                            )
+                        }
+                    }
+                }
+            } else Text("Loading image…", color = Muted)
+        }
+        Column(Modifier.fillMaxWidth().background(Color(0xFF191020), RoundedCornerShape(14.dp)).padding(9.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            OutlinedTextField(draft, { draft = it }, label = { Text("Text to add or edit") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${fontSize.toInt()} px", color = Color.White, fontSize = 12.sp)
+                Slider(value = fontSize, onValueChange = { fontSize = it }, valueRange = 10f..100f, modifier = Modifier.weight(1f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Colour", color = Muted, fontSize = 11.sp)
+                listOf(android.graphics.Color.BLACK, android.graphics.Color.WHITE, android.graphics.Color.rgb(35,75,190), android.graphics.Color.rgb(130,40,190), android.graphics.Color.RED).forEach { color ->
+                    Box(Modifier.padding(horizontal = 4.dp).size(22.dp).background(Color(color), RoundedCornerShape(50)).clickable { textColor = color })
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { strokes = emptyList(); activeStroke = emptyList(); signatureDialog = true }) { Icon(Icons.Default.Draw, null); Text("Sign") }
+            }
+            Text("Tap the image to place text. Drag text or a signature to move it.", color = Muted, fontSize = 10.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = {
+                    if (selected in overlays.indices && overlays[selected].signaturePath == null) {
+                        val copy = overlays.toMutableList()
+                        copy[selected] = copy[selected].copy(text = draft, fontSize = fontSize, fontKey = fontKey, colorArgb = textColor)
+                        overlays = copy
+                    } else onMessage("Select a text item to update it.")
+                }, modifier = Modifier.weight(1f)) { Text("Update selected") }
+                OutlinedButton(onClick = {
+                    if (selected in overlays.indices) { overlays = overlays.toMutableList().also { it.removeAt(selected) }; selected = -1 }
+                }, enabled = overlays.isNotEmpty(), modifier = Modifier.weight(1f)) { Icon(Icons.Default.Delete, null); Text("Remove") }
+            }
+            Button(onClick = { if (overlays.isEmpty()) onMessage("Add text or a signature first.") else onSave(overlays) },
+                modifier = Modifier.fillMaxWidth(), enabled = bitmap != null && overlays.isNotEmpty()) { Icon(Icons.Default.Save, null); Text("Save edited image copy") }
+        }
+    }
+    if (signatureDialog) AlertDialog(
+        onDismissRequest = { signatureDialog = false },
+        title = { Text("Draw signature", color = Color.White) },
+        text = {
+            Column {
+                Text("Draw with your finger. You can make multiple strokes.", color = Muted, fontSize = 11.sp)
+                androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(160.dp).background(Color.White, RoundedCornerShape(8.dp))
+                    .pointerInput(Unit) {
+                        detectDragGestures(onDragStart = { activeStroke = listOf(it) }, onDrag = { change, _ ->
+                            activeStroke = activeStroke + change.position
+                        }, onDragEnd = {
+                            if (activeStroke.isNotEmpty()) { strokes = strokes + listOf(activeStroke); activeStroke = emptyList() }
+                        })
+                    }) {
+                    padSize = size
+                    (strokes + listOf(activeStroke)).forEach { points ->
+                        if (points.size == 1) drawCircle(Color.Black, 2.dp.toPx(), points.first())
+                        else if (points.size > 1) {
+                            val path = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(points.first().x, points.first().y)
+                                points.drop(1).forEach { lineTo(it.x, it.y) }
+                            }
+                            drawPath(path, Color.Black, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                        }
+                    }
+                }
+                TextButton(onClick = { strokes = emptyList(); activeStroke = emptyList() }) { Text("Clear") }
+            }
+        },
+        confirmButton = { TextButton(onClick = {
+            if (strokes.isEmpty() || padSize.width <= 0f) onMessage("Draw your signature first.")
+            else runCatching {
+                val out = Bitmap.createBitmap(padSize.width.toInt().coerceAtLeast(1), padSize.height.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(out)
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = android.graphics.Color.BLACK; style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = 4f; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND
+                }
+                strokes.forEach { points ->
+                    if (points.size == 1) canvas.drawCircle(points.first().x, points.first().y, 2f, paint)
+                    else {
+                        val path = android.graphics.Path().apply {
+                            moveTo(points.first().x, points.first().y)
+                            points.drop(1).forEach { lineTo(it.x, it.y) }
+                        }
+                        canvas.drawPath(path, paint)
+                    }
+                }
+                val target = File(context.cacheDir, "xdocs_image_signature_${System.currentTimeMillis()}.png")
+                FileOutputStream(target).use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                out.recycle()
+                overlays = overlays + PdfTextOverlay(0, .5f, .75f, "", 12f, signaturePath = target.absolutePath)
+                selected = overlays.lastIndex
+                signatureDialog = false
+                onMessage("Signature added. Drag it into position.")
+            }.onFailure { onMessage("Could not create signature: ${it.message}") }
+        }) { Text("Use signature") } },
+        dismissButton = { TextButton(onClick = { signatureDialog = false }) { Text("Cancel") } },
+        containerColor = Color(0xFF1A1024)
+    )
+}
+
+private fun renderImageWithOverlays(source: File, overlays: List<PdfTextOverlay>, directory: File): File {
+    val original = decodeSampledBitmap(source, 2400)
+    val outputBitmap = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(outputBitmap)
+    canvas.drawBitmap(original, 0f, 0f, null)
+    overlays.forEach { item ->
+        if (item.signaturePath != null) {
+            val signature = BitmapFactory.decodeFile(item.signaturePath) ?: return@forEach
+            val width = original.width * .28f
+            val height = width * signature.height.toFloat() / signature.width.coerceAtLeast(1)
+            val left = (item.x.coerceIn(0f,1f) * original.width - width / 2f).coerceIn(0f,(original.width-width).coerceAtLeast(0f))
+            val top = (item.y.coerceIn(0f,1f) * original.height).coerceIn(0f,(original.height-height).coerceAtLeast(0f))
+            canvas.drawBitmap(signature, null, android.graphics.RectF(left, top, left + width, top + height), android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG))
+            signature.recycle()
+        } else {
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = item.colorArgb
+                textSize = item.fontSize.coerceIn(10f,100f)
+                textAlign = android.graphics.Paint.Align.CENTER
+                typeface = when (item.fontKey) {
+                    "serif" -> android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL)
+                    "serif_bold" -> android.graphics.Typeface.create("serif", android.graphics.Typeface.BOLD)
+                    "mono" -> android.graphics.Typeface.MONOSPACE
+                    "sans_bold" -> android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+                    else -> android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+                }
+            }
+            item.text.split('\n').take(40).forEachIndexed { line, text ->
+                canvas.drawText(text.take(2000), item.x.coerceIn(0f,1f) * original.width,
+                    item.y.coerceIn(0f,1f) * original.height + paint.textSize * (line + 1.0f), paint)
+            }
+        }
+    }
+    original.recycle()
+    val output = uniqueFile(directory, "${source.nameWithoutExtension}_edited.png")
+    FileOutputStream(output).use { outputBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    outputBitmap.recycle()
+    return output
+}
+
 @Composable
 private fun Action(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(Panel, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -564,21 +817,23 @@ private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, directory
             if(item.signaturePath!=null) {
                 val bmp=BitmapFactory.decodeFile(item.signaturePath) ?: error("Could not load signature.")
                 val image=LosslessFactory.createFromImage(doc,bmp)
-                val x=item.x.coerceIn(0f,.95f)*page.mediaBox.width
-                val top=item.y.coerceIn(0f,.95f)*page.mediaBox.height
                 val width=page.mediaBox.width*.28f
+                val x=(item.x.coerceIn(0f,1f)*page.mediaBox.width-width/2f).coerceIn(0f,(page.mediaBox.width-width).coerceAtLeast(0f))
+                val top=item.y.coerceIn(0f,1f)*page.mediaBox.height
                 val height=width*bmp.height.toFloat()/bmp.width.coerceAtLeast(1)
                 PDPageContentStream(doc,page,PDPageContentStream.AppendMode.APPEND,true,true).use{it.drawImage(image,x,(page.mediaBox.height-top-height).coerceAtLeast(0f),width,height)}
                 bmp.recycle()
             } else {
                 val font=when(item.fontKey){"serif"->PDType1Font.TIMES_ROMAN;"serif_bold"->PDType1Font.TIMES_BOLD;"mono"->PDType1Font.COURIER;"sans_bold"->PDType1Font.HELVETICA_BOLD;else->PDType1Font.HELVETICA}
-                val x=item.x.coerceIn(0f,.98f)*page.mediaBox.width
-                val y=(page.mediaBox.height-item.y.coerceIn(0f,.98f)*page.mediaBox.height-item.fontSize).coerceAtLeast(2f)
+                val cleanLines=item.text.split('\n').take(40).map { it.filter { ch -> ch.code in 32..255 }.take(2000) }
+                val measuredWidth=cleanLines.maxOfOrNull { line -> runCatching { font.getStringWidth(line)*item.fontSize/1000f }.getOrDefault(0f) } ?: 0f
+                val x=(item.x.coerceIn(0f,1f)*page.mediaBox.width-measuredWidth/2f).coerceIn(0f,(page.mediaBox.width-measuredWidth).coerceAtLeast(0f))
+                val y=(page.mediaBox.height-item.y.coerceIn(0f,1f)*page.mediaBox.height-item.fontSize).coerceAtLeast(2f)
                 PDPageContentStream(doc,page,PDPageContentStream.AppendMode.APPEND,true,true).use{stream->
                     stream.beginText();stream.setFont(font,item.fontSize.coerceIn(6f,48f))
                     stream.setNonStrokingColor(android.graphics.Color.red(item.colorArgb),android.graphics.Color.green(item.colorArgb),android.graphics.Color.blue(item.colorArgb))
                     stream.newLineAtOffset(x,y)
-                    item.text.split('\n').take(40).forEachIndexed{index,line->if(index>0)stream.newLineAtOffset(0f,-item.fontSize*1.2f);stream.showText(line.filter{it.code in 32..255}.take(2000))}
+                    cleanLines.forEachIndexed{index,line->if(index>0)stream.newLineAtOffset(0f,-item.fontSize*1.2f);stream.showText(line)}
                     stream.endText()
                 }
             }
