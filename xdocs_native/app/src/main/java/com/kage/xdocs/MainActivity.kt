@@ -211,7 +211,7 @@ private fun XDocsApp(root: File) {
                         Action("Import files", "Copy documents and other files into X DOCS", Icons.Default.UploadFile) { importFiles.launch(arrayOf("*/*")) }
                         Action("Open PDF viewer", "Read and navigate PDF pages", Icons.Default.MenuBook) { if (selected?.extension.equals("pdf", true)) page = Page.VIEWER else { message = "Select a PDF first."; page = Page.FILES } }
                         Action("PDF editor", "Add precisely positioned text and signatures", Icons.Default.Edit) { if (selected?.extension.equals("pdf", true)) page = Page.EDITOR else { message = "Select a PDF first."; page = Page.FILES } }
-                        Action("Image editor", "Add movable text and signatures to pictures", Icons.Default.Brush) { if (selected?.extension?.lowercase() in listOf("png","jpg","jpeg","webp","bmp")) page = Page.IMAGE_EDITOR else { message = "Select an image first."; page = Page.FILES } }
+                        Action("Image editor", "Add movable text and signatures to pictures", Icons.Default.Brush) { if (selected?.extension?.lowercase()?.let { it in listOf("png","jpg","jpeg","webp","bmp") } == true) page = Page.IMAGE_EDITOR else { message = "Select an image first."; page = Page.FILES } }
                         Action("Scan documents", "Capture multiple camera pages into one PDF", Icons.Default.CameraAlt) { page = Page.SCAN }
                         Action("Convert and merge", "Image-to-PDF, PDF merge and PDF-to-image", Icons.Default.Transform) { page = Page.CONVERT }
                     }
@@ -467,6 +467,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                                     val sig=remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
                                     if(sig!=null) Image(sig.asImageBitmap(),contentDescription="Signature",
                                         modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp).width(105.dp).height(42.dp)
+                                            .graphicsLayer { translationX = -size.width / 2f }
                                             .pointerInput(i,pageWidthPx,pageHeightPx) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
                                                 c.consume(); val list=overlays.toMutableList(); val old=list[i]
                                                 list[i]=old.copy(x=(old.x+d.x/pageWidthPx.coerceAtLeast(1f)).coerceIn(0f,1f),y=(old.y+d.y/pageHeightPx.coerceAtLeast(1f)).coerceIn(0f,1f)); overlays=list
