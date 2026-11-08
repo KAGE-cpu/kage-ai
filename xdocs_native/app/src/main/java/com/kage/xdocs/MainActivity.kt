@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.core.content.FileProvider
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
+import android.graphics.pdf.PdfRenderer as AndroidPdfRenderer
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -92,8 +95,11 @@ private fun XDocsApp(root: File) {
 
     fun currentDir() = folder?.let { File(root, it) } ?: root
     fun copyUri(uri: android.net.Uri, destination: File): File {
-        val raw = uri.lastPathSegment ?: "document.pdf"
-        val name = raw.substringAfterLast('/').substringAfterLast(':').safeFile()
+        val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
+        }
+        val fallback = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+        val name = (displayName ?: fallback ?: "imported_file").safeFile()
         val target = uniqueFile(destination, name)
         context.contentResolver.openInputStream(uri).use { input ->
             target.outputStream().use { output -> input?.copyTo(output) ?: error("Cannot read selected file") }
@@ -408,6 +414,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
     var pageWidth by remember(file, pageIndex) { mutableFloatStateOf(1f) }
     var pageHeight by remember(file, pageIndex) { mutableFloatStateOf(1f) }
     var fontMenu by remember { mutableStateOf(false) }
+    var toolsOpen by remember(file) { mutableStateOf(false) }
     var signatureDialog by remember { mutableStateOf(false) }
     var strokes by remember { mutableStateOf<List<List<androidx.compose.ui.geometry.Offset>>>(emptyList()) }
     var activeStroke by remember { mutableStateOf(emptyList<androidx.compose.ui.geometry.Offset>()) }
@@ -424,12 +431,8 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
         bitmap?.recycle(); bitmap = null
         if (file == null || !file.exists()) return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            runCatching { PDDocument.load(file).use { doc ->
-                require(doc.numberOfPages > 0) { "This PDF has no pages." }
-                val idx=pageIndex.coerceIn(0,doc.numberOfPages-1)
-                Triple(PDFRenderer(doc).renderImage(idx,1.2f,ImageType.RGB),doc.getPage(idx).mediaBox.width,doc.getPage(idx).mediaBox.height) to doc.numberOfPages
-            } }
-        }.onSuccess { r -> bitmap=r.first.first; pageWidth=r.first.second; pageHeight=r.first.third; pageCount=r.second }
+            runCatching { renderPdfPageNative(file, pageIndex) }
+        }.onSuccess { r -> bitmap=r.bitmap; pageWidth=r.pageWidth; pageHeight=r.pageHeight; pageCount=r.pageCount }
             .onFailure { onMessage("Could not open PDF: ${it.message}") }
     }
     Column(Modifier.fillMaxSize()) {
@@ -507,7 +510,25 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                 }
             } else Text("Rendering PDF…",color=Muted)
         }
-        if(editing) Column(Modifier.fillMaxWidth().background(Color(0xFF191020),RoundedCornerShape(14.dp)).padding(9.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+        if (editing) {
+            Row(
+                Modifier.fillMaxWidth().background(Color(0xFF191020), RoundedCornerShape(14.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TextButton(onClick = { toolsOpen = !toolsOpen }) {
+                    Icon(Icons.Default.Tune, null); Text(if (toolsOpen) "Hide tools" else "Edit tools")
+                }
+                IconButton(onClick = { undoEdit() }, enabled = undoStack.isNotEmpty()) { Icon(Icons.Default.Undo, null, tint = Accent) }
+                IconButton(onClick = { redoEdit() }, enabled = redoStack.isNotEmpty()) { Icon(Icons.Default.Redo, null, tint = Accent) }
+                Spacer(Modifier.weight(1f))
+                Button(
+                    onClick = { if (overlays.isEmpty() && !pageNumbers) onMessage("Add an edit or enable page numbers first.") else onSave(overlays, pageNumbers) },
+                    enabled = file != null && bitmap != null && (overlays.isNotEmpty() || pageNumbers),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) { Icon(Icons.Default.Save, null); Text("Save") }
+            }
+            if (toolsOpen) Column(Modifier.fillMaxWidth().background(Color(0xFF191020),RoundedCornerShape(14.dp)).padding(9.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
             OutlinedTextField(draft,{draft=it},label={Text("Text to add or edit")},modifier=Modifier.fillMaxWidth(),maxLines=2)
             Row(verticalAlignment=Alignment.CenterVertically) {
                 Box {
@@ -546,6 +567,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=pageNumbers,onCheckedChange={pageNumbers=it});Text("Add page numbers to every page",color=Muted,fontSize=12.sp)}
             Button(onClick={if(overlays.isEmpty()&&!pageNumbers)onMessage("Add an edit or enable page numbers first.")else onSave(overlays,pageNumbers)},
                 modifier=Modifier.fillMaxWidth(),enabled=file!=null&&bitmap!=null&&(overlays.isNotEmpty()||pageNumbers)){Icon(Icons.Default.Save,null);Text("Save edited PDF copy")}
+            }
         } else Text("Read-only preview. Open Edit to add text and signatures.",color=Muted,fontSize=12.sp)
     }
     if(signatureDialog) AlertDialog(
@@ -901,15 +923,44 @@ private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, pageNumbe
     }
     return output
 }
+private data class NativePdfPage(val bitmap: Bitmap, val pageWidth: Float, val pageHeight: Float, val pageCount: Int)
+
+private fun renderPdfPageNative(source: File, pageIndex: Int, targetWidth: Int = 1600): NativePdfPage {
+    ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+        AndroidPdfRenderer(descriptor).use { renderer ->
+            require(renderer.pageCount > 0) { "This PDF has no pages." }
+            val page = renderer.openPage(pageIndex.coerceIn(0, renderer.pageCount - 1))
+            try {
+                val scale = targetWidth.toFloat() / page.width.coerceAtLeast(1)
+                val width = (page.width * scale).toInt().coerceAtLeast(1)
+                val height = (page.height * scale).toInt().coerceAtLeast(1)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.WHITE)
+                page.render(bitmap, null, null, AndroidPdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                return NativePdfPage(bitmap, page.width.toFloat(), page.height.toFloat(), renderer.pageCount)
+            } finally {
+                page.close()
+            }
+        }
+    }
+}
+
 private fun renderPdfToImages(source: File, root: File): File {
     val folder = File(root, "${source.nameWithoutExtension}_pages_${System.currentTimeMillis()}").apply { mkdirs() }
     val zip = uniqueFile(root, "${source.nameWithoutExtension}_pages.zip")
-    PDDocument.load(source).use { doc ->
-        val renderer = PDFRenderer(doc)
-        for (i in 0 until doc.numberOfPages) {
-            val bitmap = renderer.renderImage(i, 1.5f, ImageType.RGB)
-            FileOutputStream(File(folder, "page_${(i + 1).toString().padStart(3, '0')}.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            bitmap.recycle()
+    ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+        AndroidPdfRenderer(descriptor).use { renderer ->
+            for (i in 0 until renderer.pageCount) {
+                val page = renderer.openPage(i)
+                try {
+                    val scale = 1.5f
+                    val bitmap = Bitmap.createBitmap((page.width * scale).toInt().coerceAtLeast(1), (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bitmap, null, null, AndroidPdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    FileOutputStream(File(folder, "page_${(i + 1).toString().padStart(3, '0')}.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                } finally { page.close() }
+            }
         }
     }
     ZipOutputStream(FileOutputStream(zip)).use { out ->
