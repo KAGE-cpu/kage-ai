@@ -10,7 +10,8 @@ X DOCS is a Kotlin/Jetpack Compose Android app. It does not run Flask or use a W
 - Export any imported file through Android's document picker.
 - PDF page viewer with page navigation.
 - PDF editor with a live page preview, draggable text and signature overlays, editable added text before saving, font family presets (sans, serif and monospace), bold presets, a live size slider, text colours, and transparent finger-drawn signature PNGs.
-- Added text and signatures are saved as a separate edited PDF copy; existing PDF text is not rewritten. The editing canvas is offline and uses local files only.
+- Added text and signatures are saved as a separate edited PDF copy; existing PDF text is not rewritten. Text placement uses the page as the coordinate reference, with centred placement and preview sizing tied to PDF page dimensions. Selected text styling updates live as the font size or colour changes.
+- Offline image editor for imported PNG/JPEG/WebP/BMP images: place text by tapping, drag text and transparent signatures, adjust text size and colour, and save a new PNG copy. Original images are preserved.
 - Camera scanning using the full-size camera capture intent; capture multiple pages and combine them into a PDF.
 - Import gallery images and convert multiple images into a multi-page PDF.
 - Merge two or more PDFs in picker selection order.
@@ -29,7 +30,7 @@ Output: `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Verification
 
-A successful CI build proves compilation and packaging, not device-level correctness. Install on the target Android phone and test: multi-file import, folder uploads, rename/move/delete, non-PDF export, PDF page navigation, multiple text overlays and undo, camera scanning at full resolution, gallery image-to-PDF, PDF merge, PDF-to-PNG ZIP export, and airplane-mode operation. Very large PDFs or photos can still exceed available memory on older devices.
+A successful CI build proves compilation and packaging, not device-level correctness. Install on the target Android phone and test: multi-file import, folder uploads, rename/move/delete, non-PDF export, PDF page navigation, centred text placement and sizing, continuous multi-stroke signatures, image text/signature editing, camera scanning at full resolution, gallery image-to-PDF, PDF merge, PDF-to-PNG ZIP export, and airplane-mode operation. Very large PDFs or photos can still exceed available memory on older devices.
 
 ## Offline
 
