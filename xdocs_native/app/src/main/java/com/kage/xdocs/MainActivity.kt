@@ -402,6 +402,13 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
     var strokes by remember { mutableStateOf<List<List<androidx.compose.ui.geometry.Offset>>>(emptyList()) }
     var activeStroke by remember { mutableStateOf(emptyList<androidx.compose.ui.geometry.Offset>()) }
     var padSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    fun syncSelectedStyle(size: Float = fontSize, key: String = fontKey, color: Int = textColor) {
+        if (selected in overlays.indices && overlays[selected].signaturePath == null) {
+            val copy = overlays.toMutableList()
+            copy[selected] = copy[selected].copy(fontSize = size, fontKey = key, colorArgb = color)
+            overlays = copy
+        }
+    }
 
     LaunchedEffect(file, pageIndex) {
         bitmap?.recycle(); bitmap = null
@@ -465,14 +472,18 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                                     )
                                 } else {
                                     val sig=remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
-                                    if(sig!=null) Image(sig.asImageBitmap(),contentDescription="Signature",
-                                        modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp).width(105.dp).height(42.dp)
+                                    if(sig!=null) {
+                                        val sigWidthDp = dw.value * .28f
+                                        val sigHeightDp = sigWidthDp * sig.height.toFloat() / sig.width.coerceAtLeast(1)
+                                        Image(sig.asImageBitmap(),contentDescription="Signature",
+                                        modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp).width(sigWidthDp.dp).height(sigHeightDp.dp)
                                             .graphicsLayer { translationX = -size.width / 2f }
                                             .pointerInput(i,pageWidthPx,pageHeightPx) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
                                                 c.consume(); val list=overlays.toMutableList(); val old=list[i]
                                                 list[i]=old.copy(x=(old.x+d.x/pageWidthPx.coerceAtLeast(1f)).coerceIn(0f,1f),y=(old.y+d.y/pageHeightPx.coerceAtLeast(1f)).coerceIn(0f,1f)); overlays=list
                                             }) }.clickable { selected=i }
                                     )
+                                    }
                                 }
                             }
                         }
@@ -486,17 +497,17 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                 Box {
                     OutlinedButton(onClick={fontMenu=true}) { Text(when(fontKey){"serif"->"Serif";"serif_bold"->"Serif Bold";"mono"->"Mono";"sans_bold"->"Sans Bold";else->"Sans"}) }
                     DropdownMenu(expanded=fontMenu,onDismissRequest={fontMenu=false}) {
-                        listOf("sans" to "Sans","sans_bold" to "Sans Bold","serif" to "Serif","serif_bold" to "Serif Bold","mono" to "Monospace").forEach { (k,v)->DropdownMenuItem(text={Text(v)},onClick={fontKey=k;fontMenu=false}) }
+                        listOf("sans" to "Sans","sans_bold" to "Sans Bold","serif" to "Serif","serif_bold" to "Serif Bold","mono" to "Monospace").forEach { (k,v)->DropdownMenuItem(text={Text(v)},onClick={fontKey=k;syncSelectedStyle(key=k);fontMenu=false}) }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
                 Text("${fontSize.toInt()} pt",color=Color.White,fontSize=12.sp)
-                Slider(value=fontSize,onValueChange={fontSize=it},valueRange=6f..48f,modifier=Modifier.weight(1f))
+                Slider(value=fontSize,onValueChange={fontSize=it;syncSelectedStyle(size=it)},valueRange=6f..48f,modifier=Modifier.weight(1f))
             }
             Row(verticalAlignment=Alignment.CenterVertically) {
                 Text("Colour",color=Muted,fontSize=11.sp)
                 listOf(android.graphics.Color.BLACK,android.graphics.Color.rgb(35,75,190),android.graphics.Color.rgb(130,40,190),android.graphics.Color.RED).forEach { c ->
-                    Box(Modifier.padding(horizontal=5.dp).size(22.dp).background(Color(c),RoundedCornerShape(50)).clickable { textColor=c })
+                    Box(Modifier.padding(horizontal=5.dp).size(22.dp).background(Color(c),RoundedCornerShape(50)).clickable { textColor=c; syncSelectedStyle(color=c) })
                 }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick={strokes=emptyList();activeStroke=emptyList();signatureDialog=true}) { Icon(Icons.Default.Draw,null);Text("Sign") }
@@ -567,6 +578,13 @@ private fun ImageWorkspace(file: File?, onBack: () -> Unit, onSave: (List<PdfTex
     var strokes by remember { mutableStateOf<List<List<androidx.compose.ui.geometry.Offset>>>(emptyList()) }
     var activeStroke by remember { mutableStateOf(emptyList<androidx.compose.ui.geometry.Offset>()) }
     var padSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    fun syncSelectedImageStyle(size: Float = fontSize, key: String = fontKey, color: Int = textColor) {
+        if (selected in overlays.indices && overlays[selected].signaturePath == null) {
+            val copy = overlays.toMutableList()
+            copy[selected] = copy[selected].copy(fontSize = size, fontKey = key, colorArgb = color)
+            overlays = copy
+        }
+    }
 
     LaunchedEffect(file) {
         bitmap?.recycle(); bitmap = null
@@ -634,9 +652,12 @@ private fun ImageWorkspace(file: File?, onBack: () -> Unit, onSave: (List<PdfTex
                             )
                         } else {
                             val sig = remember(item.signaturePath) { BitmapFactory.decodeFile(item.signaturePath) }
-                            if (sig != null) Image(sig.asImageBitmap(), contentDescription = "Signature",
+                            if (sig != null) {
+                                val sigWidthDp = dw.value * .28f
+                                val sigHeightDp = sigWidthDp * sig.height.toFloat() / sig.width.coerceAtLeast(1)
+                                Image(sig.asImageBitmap(), contentDescription = "Signature",
                                 modifier = Modifier.offset(x = (item.x * dw.value).dp, y = (item.y * dh.value).dp)
-                                    .width(105.dp).height(42.dp)
+                                    .width(sigWidthDp.dp).height(sigHeightDp.dp)
                                     .pointerInput(index, widthPx, heightPx) {
                                         detectDragGestures(onDragStart = { selected = index }, onDrag = { change, delta ->
                                             change.consume()
@@ -650,6 +671,7 @@ private fun ImageWorkspace(file: File?, onBack: () -> Unit, onSave: (List<PdfTex
                                         })
                                     }.clickable { selected = index }
                             )
+                            }
                         }
                     }
                 }
@@ -659,12 +681,12 @@ private fun ImageWorkspace(file: File?, onBack: () -> Unit, onSave: (List<PdfTex
             OutlinedTextField(draft, { draft = it }, label = { Text("Text to add or edit") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${fontSize.toInt()} px", color = Color.White, fontSize = 12.sp)
-                Slider(value = fontSize, onValueChange = { fontSize = it }, valueRange = 10f..100f, modifier = Modifier.weight(1f))
+                Slider(value = fontSize, onValueChange = { fontSize = it; syncSelectedImageStyle(size = it) }, valueRange = 10f..100f, modifier = Modifier.weight(1f))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Colour", color = Muted, fontSize = 11.sp)
                 listOf(android.graphics.Color.BLACK, android.graphics.Color.WHITE, android.graphics.Color.rgb(35,75,190), android.graphics.Color.rgb(130,40,190), android.graphics.Color.RED).forEach { color ->
-                    Box(Modifier.padding(horizontal = 4.dp).size(22.dp).background(Color(color), RoundedCornerShape(50)).clickable { textColor = color })
+                    Box(Modifier.padding(horizontal = 4.dp).size(22.dp).background(Color(color), RoundedCornerShape(50)).clickable { textColor = color; syncSelectedImageStyle(color = color) })
                 }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { strokes = emptyList(); activeStroke = emptyList(); signatureDialog = true }) { Icon(Icons.Default.Draw, null); Text("Sign") }
