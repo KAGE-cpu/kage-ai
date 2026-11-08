@@ -39,6 +39,7 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
 import com.tom_roush.pdfbox.rendering.ImageType
 import com.tom_roush.pdfbox.rendering.PDFRenderer
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
@@ -67,7 +68,8 @@ private enum class Page { HOME, FILES, SCAN, CONVERT, VIEWER, EDITOR, IMAGE_EDIT
 private data class PdfTextOverlay(
     val page: Int, val x: Float, val y: Float, val text: String, val fontSize: Float,
     val fontKey: String = "sans", val colorArgb: Int = android.graphics.Color.BLACK,
-    val signaturePath: String? = null
+    val signaturePath: String? = null,
+    val kind: String = "text", val boxWidth: Float = .28f, val boxHeight: Float = .055f
 )
 
 @Composable
@@ -293,9 +295,9 @@ private fun XDocsApp(root: File) {
                         file = selected,
                         editing = page == Page.EDITOR,
                         onBack = { page = Page.FILES },
-                        onSave = { textOverlays ->
+                        onSave = { textOverlays, pageNumbers ->
                             val source = selected ?: error("No PDF selected")
-                            val output = addTextToPdf(source, textOverlays, source.parentFile ?: root)
+                            val output = addTextToPdf(source, textOverlays, pageNumbers, source.parentFile ?: root)
                             selected = output; refresh++; message = "Saved edited copy with ${textOverlays.size} item(s): ${output.name}"; page = Page.FILES
                         },
                         onMessage = { message = it }
@@ -385,7 +387,7 @@ private fun XDocsApp(root: File) {
 }
 
 @Composable
-private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSave: (List<PdfTextOverlay>) -> Unit, onMessage: (String) -> Unit) {
+private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSave: (List<PdfTextOverlay>, Boolean) -> Unit, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     var pageIndex by remember(file) { mutableIntStateOf(0) }
     var pageCount by remember(file) { mutableIntStateOf(0) }
@@ -395,6 +397,13 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
     var textColor by remember(file) { mutableIntStateOf(android.graphics.Color.BLACK) }
     var overlays by remember(file) { mutableStateOf(emptyList<PdfTextOverlay>()) }
     var selected by remember(file) { mutableIntStateOf(-1) }
+    var undoStack by remember(file) { mutableStateOf<List<List<PdfTextOverlay>>>(emptyList()) }
+    var redoStack by remember(file) { mutableStateOf<List<List<PdfTextOverlay>>>(emptyList()) }
+    var highlightMode by remember(file) { mutableStateOf(false) }
+    var pageNumbers by remember(file) { mutableStateOf(false) }
+    fun changeOverlays(next: List<PdfTextOverlay>) { undoStack=(undoStack+listOf(overlays)).takeLast(60); redoStack=emptyList(); overlays=next }
+    fun undoEdit() { if(undoStack.isNotEmpty()){redoStack=redoStack+listOf(overlays);overlays=undoStack.last();undoStack=undoStack.dropLast(1);selected=-1} }
+    fun redoEdit() { if(redoStack.isNotEmpty()){undoStack=undoStack+listOf(overlays);overlays=redoStack.last();redoStack=redoStack.dropLast(1);selected=-1} }
     var bitmap by remember(file, pageIndex) { mutableStateOf<Bitmap?>(null) }
     var pageWidth by remember(file, pageIndex) { mutableFloatStateOf(1f) }
     var pageHeight by remember(file, pageIndex) { mutableFloatStateOf(1f) }
@@ -407,7 +416,7 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
         if (selected in overlays.indices && overlays[selected].signaturePath == null) {
             val copy = overlays.toMutableList()
             copy[selected] = copy[selected].copy(fontSize = size, fontKey = key, colorArgb = color)
-            overlays = copy
+            changeOverlays(copy)
         }
     }
 
@@ -450,8 +459,11 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                     if(editing) {
                         Box(Modifier.fillMaxSize().pointerInput(pageIndex,dw,dh) {
                             detectTapGestures { p ->
-                                if(draft.isNotBlank()) {
-                                    overlays=overlays+PdfTextOverlay(pageIndex,(p.x/size.width).coerceIn(0f,.95f),(p.y/size.height).coerceIn(0f,.95f),draft,fontSize,fontKey,textColor)
+                                if(highlightMode) {
+                                    val mark=PdfTextOverlay(pageIndex,(p.x/size.width).coerceIn(0f,.98f),(p.y/size.height).coerceIn(0f,.98f),"",12f,kind="highlight",boxWidth=.28f,boxHeight=.055f)
+                                    changeOverlays(overlays+mark);selected=overlays.lastIndex;onMessage("Highlight added.")
+                                } else if(draft.isNotBlank()) {
+                                    changeOverlays(overlays+PdfTextOverlay(pageIndex,(p.x/size.width).coerceIn(0f,.95f),(p.y/size.height).coerceIn(0f,.95f),draft,fontSize,fontKey,textColor))
                                     selected=overlays.lastIndex; draft=""
                                     onMessage("Text placed. Tap Update selected to edit it, or drag it to move it.")
                                 } else onMessage("Enter text first, then tap the page to place it.")
@@ -459,14 +471,17 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                         })
                         overlays.forEachIndexed { i,item ->
                             if(item.page==pageIndex) {
-                                if(item.signaturePath==null) {
+                                if(item.kind=="highlight") {
+                                    Box(Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp).width((item.boxWidth*dw.value).dp).height((item.boxHeight*dh.value).dp).background(Color(0x66FFEB3B))
+                                        .pointerInput(i,pageWidthPx,pageHeightPx){detectDragGestures(onDragStart={selected=i;undoStack=undoStack+listOf(overlays);redoStack=emptyList()},onDrag={c,d->c.consume();val list=overlays.toMutableList();val old=list[i];list[i]=old.copy(x=(old.x+d.x/pageWidthPx.coerceAtLeast(1f)).coerceIn(0f,1f),y=(old.y+d.y/pageHeightPx.coerceAtLeast(1f)).coerceIn(0f,1f));overlays=list})})
+                                } else if(item.signaturePath==null) {
                                     Text(item.text,color=Color(item.colorArgb),fontSize=(item.fontSize*dw.value/pageWidth.coerceAtLeast(1f)/previewFontScale).sp,
                                         fontWeight=if(item.fontKey.endsWith("bold")) FontWeight.Bold else FontWeight.Normal,
                                         fontFamily=when { item.fontKey.startsWith("serif")->androidx.compose.ui.text.font.FontFamily.Serif; item.fontKey=="mono"->androidx.compose.ui.text.font.FontFamily.Monospace; else->androidx.compose.ui.text.font.FontFamily.SansSerif },
                                         modifier=Modifier.offset(x=(item.x*dw.value).dp,y=(item.y*dh.value).dp)
                                             .graphicsLayer { translationX = -size.width / 2f }
                                             .background(if(selected==i) Color(0x447C3AED) else Color.Transparent)
-                                            .pointerInput(i,pageWidthPx,pageHeightPx) { detectDragGestures(onDragStart={selected=i},onDrag={c,d ->
+                                            .pointerInput(i,pageWidthPx,pageHeightPx) { detectDragGestures(onDragStart={selected=i;undoStack=undoStack+listOf(overlays);redoStack=emptyList()},onDrag={c,d ->
                                                 c.consume(); val list=overlays.toMutableList(); val old=list[i]
                                                 list[i]=old.copy(x=(old.x+d.x/pageWidthPx.coerceAtLeast(1f)).coerceIn(0f,1f),y=(old.y+d.y/pageHeightPx.coerceAtLeast(1f)).coerceIn(0f,1f)); overlays=list
                                             }) }.clickable { selected=i; draft=item.text; fontSize=item.fontSize; fontKey=item.fontKey; textColor=item.colorArgb }
@@ -513,21 +528,24 @@ private fun PdfWorkspace(file: File?, editing: Boolean, onBack: () -> Unit, onSa
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick={strokes=emptyList();activeStroke=emptyList();signatureDialog=true}) { Icon(Icons.Default.Draw,null);Text("Sign") }
             }
-            Text("Tap the page to place new text. Drag text or a signature to reposition it.",color=Muted,fontSize=10.sp)
-            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            Text(if(highlightMode) "Highlight mode: tap the page to mark an area." else "Tap the page to place text. Drag text or signatures to reposition them.",color=if(highlightMode) Accent else Muted,fontSize=10.sp)
+            Row(horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
+                IconButton(onClick={undoEdit()},enabled=undoStack.isNotEmpty()){Icon(Icons.Default.Undo,null,tint=if(undoStack.isNotEmpty()) Accent else Muted)}
+                IconButton(onClick={redoEdit()},enabled=redoStack.isNotEmpty()){Icon(Icons.Default.Redo,null,tint=if(redoStack.isNotEmpty()) Accent else Muted)}
+                OutlinedButton(onClick={highlightMode=!highlightMode},modifier=Modifier.weight(1f)){Text(if(highlightMode) "Highlight ON" else "Highlight")}
                 OutlinedButton(onClick={
-                    if(selected in overlays.indices && overlays[selected].signaturePath==null) {
-                        val list=overlays.toMutableList(); list[selected]=list[selected].copy(text=draft,fontSize=fontSize,fontKey=fontKey,colorArgb=textColor); overlays=list
-                        onMessage("Selected text updated.")
+                    if(selected in overlays.indices && overlays[selected].signaturePath==null && overlays[selected].kind=="text") {
+                        val list=overlays.toMutableList();list[selected]=list[selected].copy(text=draft,fontSize=fontSize,fontKey=fontKey,colorArgb=textColor);changeOverlays(list);onMessage("Selected text updated.")
                     } else onMessage("Select a text item to update, or tap the page to add one.")
-                },modifier=Modifier.weight(1f)) { Text("Update selected") }
+                },modifier=Modifier.weight(1f)){Text("Update")}
                 OutlinedButton(onClick={
-                    if(selected in overlays.indices) { overlays=overlays.toMutableList().also{it.removeAt(selected)};selected=-1 }
-                    else if(overlays.isNotEmpty()) overlays=overlays.dropLast(1)
-                },enabled=overlays.isNotEmpty(),modifier=Modifier.weight(1f)) { Icon(Icons.Default.Delete,null);Text("Remove") }
+                    if(selected in overlays.indices){changeOverlays(overlays.toMutableList().also{it.removeAt(selected)});selected=-1}
+                    else if(overlays.isNotEmpty())changeOverlays(overlays.dropLast(1))
+                },enabled=overlays.isNotEmpty(),modifier=Modifier.weight(1f)){Icon(Icons.Default.Delete,null);Text("Remove")}
             }
-            Button(onClick={if(overlays.isEmpty()) onMessage("Add text or a signature first.") else onSave(overlays)},
-                modifier=Modifier.fillMaxWidth(),enabled=file!=null && bitmap!=null && overlays.isNotEmpty()) { Icon(Icons.Default.Save,null);Text("Save edited PDF copy") }
+            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=pageNumbers,onCheckedChange={pageNumbers=it});Text("Add page numbers to every page",color=Muted,fontSize=12.sp)}
+            Button(onClick={if(overlays.isEmpty()&&!pageNumbers)onMessage("Add an edit or enable page numbers first.")else onSave(overlays,pageNumbers)},
+                modifier=Modifier.fillMaxWidth(),enabled=file!=null&&bitmap!=null&&(overlays.isNotEmpty()||pageNumbers)){Icon(Icons.Default.Save,null);Text("Save edited PDF copy")}
         } else Text("Read-only preview. Open Edit to add text and signatures.",color=Muted,fontSize=12.sp)
     }
     if(signatureDialog) AlertDialog(
@@ -831,14 +849,23 @@ private fun EmptyState(title: String, subtitle: String) {
     }
 }
 
-private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, directory: File): File {
-    require(overlays.isNotEmpty()) { "Add at least one item." }
+private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, pageNumbers: Boolean, directory: File): File {
+    require(overlays.isNotEmpty() || pageNumbers) { "Add an edit or page numbers." }
     val output=uniqueFile(directory,"${source.nameWithoutExtension}_edited.pdf")
     PDDocument.load(source).use { doc ->
         overlays.forEach { item ->
             require(item.page in 0 until doc.numberOfPages) { "Page ${item.page+1} does not exist." }
             val page=doc.getPage(item.page)
-            if(item.signaturePath!=null) {
+            if(item.kind=="highlight") {
+                val width=page.mediaBox.width*item.boxWidth.coerceIn(.02f,.9f)
+                val height=page.mediaBox.height*item.boxHeight.coerceIn(.01f,.3f)
+                val x=item.x.coerceIn(0f,1f)*page.mediaBox.width
+                val y=(page.mediaBox.height-item.y.coerceIn(0f,1f)*page.mediaBox.height-height).coerceAtLeast(0f)
+                PDPageContentStream(doc,page,PDPageContentStream.AppendMode.APPEND,true,true).use { stream ->
+                    val alpha=PDExtendedGraphicsState().apply { nonStrokingAlphaConstant=.38f }
+                    stream.setGraphicsStateParameters(alpha);stream.setNonStrokingColor(255,235,59);stream.addRect(x,y,width,height);stream.fill()
+                }
+            } else if(item.signaturePath!=null) {
                 val bmp=BitmapFactory.decodeFile(item.signaturePath) ?: error("Could not load signature.")
                 val image=LosslessFactory.createFromImage(doc,bmp)
                 val width=page.mediaBox.width*.28f
@@ -860,6 +887,14 @@ private fun addTextToPdf(source: File, overlays: List<PdfTextOverlay>, directory
                     cleanLines.forEachIndexed{index,line->if(index>0)stream.newLineAtOffset(0f,-item.fontSize*1.2f);stream.showText(line)}
                     stream.endText()
                 }
+            }
+        }
+        if(pageNumbers) for(index in 0 until doc.numberOfPages) {
+            val targetPage=doc.getPage(index);val label=(index+1).toString();val size=9f
+            val width=PDType1Font.HELVETICA.getStringWidth(label)*size/1000f
+            PDPageContentStream(doc,targetPage,PDPageContentStream.AppendMode.APPEND,true,true).use { stream ->
+                stream.beginText();stream.setFont(PDType1Font.HELVETICA,size);stream.setNonStrokingColor(115,105,125)
+                stream.newLineAtOffset((targetPage.mediaBox.width-width)/2f,16f);stream.showText(label);stream.endText()
             }
         }
         doc.save(output)
