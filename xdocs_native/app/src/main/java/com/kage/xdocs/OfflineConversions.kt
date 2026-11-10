@@ -34,48 +34,71 @@ internal object OfflineConversions {
     }
 
     fun docxToPdf(source: File, directory: File): File {
+        require(source.isFile && source.length() > 0L) { "Select a readable Word document." }
+        require(source.extension.equals("docx", true)) { "Only modern .docx Word documents are supported." }
         val text = readDocxText(source)
-        require(text.isNotBlank()) { "No readable text was found in this Word document." }
+        require(text.isNotBlank()) { "No readable paragraphs were found in this Word document." }
         val output = unique(directory, "${source.nameWithoutExtension}.pdf")
         PDDocument().use { pdf ->
-            val pageSize = PDRectangle.LETTER
+            val pageSize = PDRectangle.A4
+            val margin = 48f
+            val font = PDType1Font.HELVETICA
+            val fontSize = 10.5f
+            val leading = 14f
             var page = PDPage(pageSize)
             pdf.addPage(page)
             var stream = PDPageContentStream(pdf, page)
-            var y = pageSize.height - 54f
-            val font = PDType1Font.HELVETICA
-            val fontSize = 11f
-            val leading = 15f
+            var y = pageSize.height - margin
             try {
-                text.split('\n').forEach { raw ->
-                    val line = raw.replace('\t', ' ').trimEnd()
-                    val chunks = wrap(line, 92)
-                    if (chunks.isEmpty()) {
+                text.replace("\\r\\n", "\\n").replace('\\r', '\\n').split('\\n').forEach { paragraph ->
+                    val safe = paragraph.replace('\\t', ' ').map { ch -> if (ch.code in 32..126) ch else '?' }.joinToString("")
+                    if (safe.isEmpty()) {
                         y -= leading
-                    } else for (chunk in chunks) {
-                        if (y < 54f) {
-                            stream.close()
-                            page = PDPage(pageSize)
-                            pdf.addPage(page)
-                            stream = PDPageContentStream(pdf, page)
-                            y = pageSize.height - 54f
+                    } else {
+                        var remaining = safe
+                        while (remaining.isNotEmpty()) {
+                            var count = 0
+                            while (count < remaining.length) {
+                                val candidate = remaining.substring(0, count + 1)
+                                val width = font.getStringWidth(candidate) * fontSize / 1000f
+                                if (width > pageSize.width - margin * 2f) break
+                                count++
+                            }
+                            if (count == 0) count = 1
+                            var cut = count
+                            if (count < remaining.length) {
+                                val space = remaining.lastIndexOf(' ', count - 1)
+                                if (space > 0) cut = space
+                            }
+                            val line = remaining.substring(0, cut).trimEnd()
+                            remaining = remaining.substring(cut).trimStart()
+                            if (y < margin) {
+                                stream.close()
+                                page = PDPage(pageSize)
+                                pdf.addPage(page)
+                                stream = PDPageContentStream(pdf, page)
+                                y = pageSize.height - margin
+                            }
+                            if (line.isNotEmpty()) {
+                                stream.beginText()
+                                stream.setFont(font, fontSize)
+                                stream.newLineAtOffset(margin, y)
+                                stream.showText(line)
+                                stream.endText()
+                            }
+                            y -= leading
                         }
-                        stream.beginText()
-                        stream.setFont(font, fontSize)
-                        stream.newLineAtOffset(54f, y)
-                        stream.showText(chunk.toPdfWinAnsi())
-                        stream.endText()
-                        y -= leading
                     }
+                    y -= 3f
                 }
             } finally {
                 stream.close()
             }
             pdf.save(output)
         }
+        require(output.isFile && output.length() > 100L) { "The PDF could not be generated." }
         return output
     }
-
     fun pdfToText(source: File, directory: File): File {
         val text = PDDocument.load(source).use { pdf ->
             PDFTextStripper().apply { setSortByPosition(true) }.getText(pdf)
