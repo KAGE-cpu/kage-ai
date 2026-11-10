@@ -280,22 +280,70 @@ private fun XDocsApp(root: File) {
                         }
                     }
                     Page.CONVERT -> {
-                        Text("Convert documents", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("Conversion centre", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("Offline tools • files stay on this device", color = Muted, fontSize = 12.sp)
+                        Action("Choose a file to convert", "Import a PDF, DOCX, TXT or image first", Icons.Default.FolderOpen) { importFiles.launch(arrayOf("*/*")) }
+                        Text("PDF conversions", color = Accent, fontWeight = FontWeight.Bold)
+                        Action("PDF to Word (.docx)", "Extract selectable text into an editable Word file", Icons.Default.Description) {
+                            val source = selected?.takeIf { it.extension.equals("pdf", true) }
+                            if (source == null) message = "Import or select a PDF first."
+                            else runCatching { selected = OfflineConversions.pdfToDocx(source, source.parentFile ?: root); refresh++; message = "Created ${selected!!.name}" }
+                                .onFailure { message = "PDF to Word failed: ${it.message}" }
+                        }
+                        Action("PDF to Text (.txt)", "Extract selectable text into a text file", Icons.Default.TextSnippet) {
+                            val source = selected?.takeIf { it.extension.equals("pdf", true) }
+                            if (source == null) message = "Import or select a PDF first."
+                            else runCatching { selected = OfflineConversions.pdfToText(source, source.parentFile ?: root); refresh++; message = "Created ${selected!!.name}" }
+                                .onFailure { message = "PDF to text failed: ${it.message}" }
+                        }
+                        Action("PDF to images", "Render each page to PNG files in a ZIP", Icons.Default.Collections) {
+                            val source = selected?.takeIf { it.extension.equals("pdf", true) }
+                            if (source == null) message = "Import or select a PDF first."
+                            else runCatching { exportZip = renderPdfToImages(source, root); message = "Created ${exportZip!!.name}. Export it below." }
+                                .onFailure { message = "PDF to images failed: ${it.message}" }
+                        }
+                        Text("Word and text conversions", color = Accent, fontWeight = FontWeight.Bold)
+                        Action("Word (.docx) to PDF", "Create a clean, text-based PDF copy", Icons.Default.PictureAsPdf) {
+                            val source = selected?.takeIf { it.extension.equals("docx", true) }
+                            if (source == null) message = "Import or select a .docx Word file first."
+                            else runCatching { selected = OfflineConversions.docxToPdf(source, source.parentFile ?: root); refresh++; message = "Created ${selected!!.name}" }
+                                .onFailure { message = "Word to PDF failed: ${it.message}" }
+                        }
+                        Action("Word (.docx) to Text", "Extract paragraphs into a .txt file", Icons.Default.TextSnippet) {
+                            val source = selected?.takeIf { it.extension.equals("docx", true) }
+                            if (source == null) message = "Import or select a .docx Word file first."
+                            else runCatching { selected = OfflineConversions.docxToText(source, source.parentFile ?: root); refresh++; message = "Created ${selected!!.name}" }
+                                .onFailure { message = "Word to text failed: ${it.message}" }
+                        }
+                        Action("Text (.txt) to Word", "Create an editable .docx document", Icons.Default.Description) {
+                            val source = selected?.takeIf { it.extension.equals("txt", true) }
+                            if (source == null) message = "Import or select a .txt file first."
+                            else runCatching { selected = OfflineConversions.textToDocx(source, source.parentFile ?: root); refresh++; message = "Created ${selected!!.name}" }
+                                .onFailure { message = "Text to Word failed: ${it.message}" }
+                        }
+                        Action("Text (.txt) to PDF", "Create a printable PDF document", Icons.Default.PictureAsPdf) {
+                            val source = selected?.takeIf { it.extension.equals("txt", true) }
+                            if (source == null) message = "Import or select a .txt file first."
+                            else runCatching { selected = OfflineConversions.textToPdf(source, source.parentFile ?: root); refresh++; message = "Created ${selected!!.name}" }
+                                .onFailure { message = "Text to PDF failed: ${it.message}" }
+                        }
+                        Text("Image conversions", color = Accent, fontWeight = FontWeight.Bold)
+                        listOf("JPG", "PNG", "WebP").forEach { format ->
+                            Action("Image to $format", "Convert the selected image to .$format", Icons.Default.Image) {
+                                val source = selected?.takeIf { it.extension.lowercase() in listOf("jpg","jpeg","png","webp","bmp") }
+                                if (source == null) message = "Import or select an image first."
+                                else runCatching { selected = OfflineConversions.convertImage(source, source.parentFile ?: root, format); refresh++; message = "Created ${selected!!.name}" }
+                                    .onFailure { message = "Image conversion failed: ${it.message}" }
+                            }
+                        }
+                        Text("PDF tools", color = Accent, fontWeight = FontWeight.Bold)
                         Action("Images to PDF", "Combine selected pictures into one PDF", Icons.Default.Image) { importImages.launch("image/*") }
                         Action("Merge PDF files", "Join two or more PDFs in selection order", Icons.Default.MergeType) { mergePicker.launch(arrayOf("application/pdf")) }
-                        Action("PDF to images", "Render pages to PNG and package them in a ZIP", Icons.Default.Collections) {
-                            val source = selected?.takeIf { it.extension.equals("pdf", true) }
-                            if (source == null) message = "Select a PDF from My Documents first."
-                            else runCatching {
-                                exportZip = renderPdfToImages(source, root)
-                                message = "Created ${exportZip!!.name}. Use Export page images ZIP below."
-                            }.onFailure { message = "PDF conversion failed: ${it.message}" }
-                        }
-                        Action("Export selected file", "Save a copy to a location you choose", Icons.Default.FileDownload) {
+                        Action("Export selected file", "Save the converted file outside X DOCS", Icons.Default.FileDownload) {
                             selected?.let { exportSelected.launch(it.name) } ?: run { message = "Select a file first." }
                         }
                         if (exportZip != null) Action("Export page images ZIP", "Save rendered PNG pages outside X DOCS", Icons.Default.FolderZip) { exportArchive.launch(exportZip!!.name) }
-                        Text("PDF-to-image creates one PNG per page and a ZIP archive for export.", color = Muted, fontSize = 12.sp)
+                        Text("PDF-to-Word works best with selectable text. Scanned PDFs and complex page layouts need OCR or advanced layout reconstruction, which are not included in this offline version.", color = Muted, fontSize = 11.sp)
                     }
                     Page.VIEWER, Page.EDITOR -> PdfWorkspace(
                         file = selected,
