@@ -201,7 +201,7 @@ private fun XDocsApp(root: File) {
                 }
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).then(if (page == Page.CONVERT) Modifier.verticalScroll(rememberScrollState()) else Modifier)) {
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -901,13 +901,29 @@ private fun renderImageWithOverlays(source: File, overlays: List<PdfTextOverlay>
 
 @Composable
 private fun Action(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(Panel, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = Accent, modifier = Modifier.size(26.dp))
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp)
+            .background(
+                androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF292039), Color(0xFF171020), Color(0xFF111019))),
+                shape
+            )
+            .then(Modifier.border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF72528E).copy(alpha = .42f)), shape))
+            .clickable(onClick = onClick).padding(horizontal = 15.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(42.dp).background(
+                androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF9C55E8), Color(0xFF5130A0))),
+                RoundedCornerShape(13.dp)
+            ),
+            contentAlignment = Alignment.Center
+        ) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(23.dp)) }
         Column(Modifier.weight(1f).padding(start = 13.dp)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = Muted, fontSize = 12.sp)
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(subtitle, color = Color(0xFFC3B5D3), fontSize = 11.sp)
         }
-        Icon(Icons.Default.ChevronRight, null, tint = Muted)
+        Icon(Icons.Default.ChevronRight, null, tint = Color(0xFFD5B2FF))
     }
 }
 @Composable
