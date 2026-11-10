@@ -51,7 +51,7 @@ internal object OfflineConversions {
             var y = pageSize.height - margin
             try {
                 text.replace("\r\n", "\n").replace('\r', '\n').split('\n').forEach { paragraph ->
-                    val safe = paragraph.replace('\\t', ' ').map { ch -> if (ch.code in 32..126) ch else '?' }.joinToString("")
+                    val safe = paragraph.replace('\t', ' ').map { ch -> if (ch.code in 32..126) ch else '?' }.joinToString("")
                     if (safe.isEmpty()) {
                         y -= leading
                     } else {
