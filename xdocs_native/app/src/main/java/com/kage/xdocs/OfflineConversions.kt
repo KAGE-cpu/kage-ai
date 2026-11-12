@@ -192,7 +192,7 @@ internal object OfflineConversions {
                 }
                 event = parser.next()
             }
-            return paragraphs.joinToString("\\n")
+            return paragraphs.joinToString("\n")
         }
     }
 
