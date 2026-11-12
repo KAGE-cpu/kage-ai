@@ -2,6 +2,11 @@ package com.kage.xdocs
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.graphics.Typeface
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
@@ -38,66 +43,7 @@ internal object OfflineConversions {
         require(source.extension.equals("docx", true)) { "Only modern .docx Word documents are supported." }
         val text = readDocxText(source)
         require(text.isNotBlank()) { "No readable paragraphs were found in this Word document." }
-        val output = unique(directory, "${source.nameWithoutExtension}.pdf")
-        PDDocument().use { pdf ->
-            val pageSize = PDRectangle.A4
-            val margin = 48f
-            val font = PDType1Font.HELVETICA
-            val fontSize = 10.5f
-            val leading = 14f
-            var page = PDPage(pageSize)
-            pdf.addPage(page)
-            var stream = PDPageContentStream(pdf, page)
-            var y = pageSize.height - margin
-            try {
-                text.replace("\r\n", "\n").replace('\r', '\n').split('\n').forEach { paragraph ->
-                    val safe = paragraph.replace('\t', ' ').map { ch -> if (ch.code in 32..126) ch else '?' }.joinToString("")
-                    if (safe.isEmpty()) {
-                        y -= leading
-                    } else {
-                        var remaining = safe
-                        while (remaining.isNotEmpty()) {
-                            var count = 0
-                            while (count < remaining.length) {
-                                val candidate = remaining.substring(0, count + 1)
-                                val width = font.getStringWidth(candidate) * fontSize / 1000f
-                                if (width > pageSize.width - margin * 2f) break
-                                count++
-                            }
-                            if (count == 0) count = 1
-                            var cut = count
-                            if (count < remaining.length) {
-                                val space = remaining.lastIndexOf(' ', count - 1)
-                                if (space > 0) cut = space
-                            }
-                            val line = remaining.substring(0, cut).trimEnd()
-                            remaining = remaining.substring(cut).trimStart()
-                            if (y < margin) {
-                                stream.close()
-                                page = PDPage(pageSize)
-                                pdf.addPage(page)
-                                stream = PDPageContentStream(pdf, page)
-                                y = pageSize.height - margin
-                            }
-                            if (line.isNotEmpty()) {
-                                stream.beginText()
-                                stream.setFont(font, fontSize)
-                                stream.newLineAtOffset(margin, y)
-                                stream.showText(line)
-                                stream.endText()
-                            }
-                            y -= leading
-                        }
-                    }
-                    y -= 3f
-                }
-            } finally {
-                stream.close()
-            }
-            pdf.save(output)
-        }
-        require(output.isFile && output.length() > 100L) { "The PDF could not be generated." }
-        return output
+        return writeTextPdf(text, unique(directory, "${source.nameWithoutExtension}.pdf"))
     }
     fun pdfToText(source: File, directory: File): File {
         val text = PDDocument.load(source).use { pdf ->
@@ -117,35 +63,85 @@ internal object OfflineConversions {
 
     fun textToPdf(source: File, directory: File): File {
         val text = source.readText(Charsets.UTF_8)
-        val output = unique(directory, "${source.nameWithoutExtension}.pdf")
-        PDDocument().use { pdf ->
-            val size = PDRectangle.LETTER
-            var page = PDPage(size)
-            pdf.addPage(page)
-            var stream = PDPageContentStream(pdf, page)
-            var y = size.height - 54f
-            try {
-                text.split('\n').forEach { raw ->
-                    val lines = wrap(raw.replace('\t', ' '), 92)
-                    if (lines.isEmpty()) y -= 15f
-                    for (line in lines) {
-                        if (y < 54f) {
-                            stream.close()
-                            page = PDPage(size); pdf.addPage(page)
-                            stream = PDPageContentStream(pdf, page)
-                            y = size.height - 54f
-                        }
-                        stream.beginText()
-                        stream.setFont(PDType1Font.HELVETICA, 11f)
-                        stream.newLineAtOffset(54f, y)
-                        stream.showText(line.toPdfWinAnsi())
-                        stream.endText()
-                        y -= 15f
-                    }
-                }
-            } finally { stream.close() }
-            pdf.save(output)
+        require(text.isNotBlank()) { "The text file is empty." }
+        return writeTextPdf(text, unique(directory, "${source.nameWithoutExtension}.pdf"))
+    }
+
+    /**
+     * Use Android's native PDF writer for text documents. This avoids PDFBox's
+     * limited Standard-14 font encoding, which can fail on Unicode text and
+     * on some Android/PDFBox combinations.
+     */
+    private fun writeTextPdf(text: String, output: File): File {
+        val document = PdfDocument()
+        val pageWidth = 595
+        val pageHeight = 842
+        val margin = 48f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.BLACK
+            textSize = 11f
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         }
+        val maxWidth = pageWidth - margin * 2f
+        val leading = 16f
+        var pageNumber = 1
+        var page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+        var canvas = page.canvas
+        var y = margin + paint.textSize
+
+        fun nextPage() {
+            document.finishPage(page)
+            pageNumber++
+            page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+            canvas = page.canvas
+            y = margin + paint.textSize
+        }
+
+        try {
+            text.replace("\\r\\n", "\\n").replace('\\r', '\\n').split('\\n').forEach { paragraph ->
+                if (paragraph.isBlank()) {
+                    y += leading
+                    if (y > pageHeight - margin) nextPage()
+                } else {
+                    val words = paragraph.replace('\\t', ' ').trim().split(Regex("\\s+"))
+                    var line = StringBuilder()
+                    for (word in words) {
+                        val candidate = if (line.isEmpty()) word else "${line} ${word}"
+                        if (paint.measureText(candidate) <= maxWidth) {
+                            line = StringBuilder(candidate)
+                        } else {
+                            if (line.isNotEmpty()) {
+                                if (y > pageHeight - margin) nextPage()
+                                canvas.drawText(line.toString(), margin, y, paint)
+                                y += leading
+                                line = StringBuilder()
+                            }
+                            var remainder = word
+                            while (paint.measureText(remainder) > maxWidth && remainder.length > 1) {
+                                var cut = 1
+                                while (cut < remainder.length && paint.measureText(remainder.substring(0, cut + 1)) <= maxWidth) cut++
+                                if (y > pageHeight - margin) nextPage()
+                                canvas.drawText(remainder.substring(0, cut), margin, y, paint)
+                                y += leading
+                                remainder = remainder.substring(cut)
+                            }
+                            line.append(remainder)
+                        }
+                    }
+                    if (line.isNotEmpty()) {
+                        if (y > pageHeight - margin) nextPage()
+                        canvas.drawText(line.toString(), margin, y, paint)
+                        y += leading
+                    }
+                    y += 5f
+                }
+            }
+            document.finishPage(page)
+            FileOutputStream(output).use { document.writeTo(it) }
+        } finally {
+            document.close()
+        }
+        require(output.isFile && output.length() > 100L) { "The PDF could not be generated." }
         return output
     }
 
@@ -169,37 +165,34 @@ internal object OfflineConversions {
     }
 
     private fun readDocxText(source: File): String {
+        require(source.isFile && source.length() > 0L) { "The Word document is empty or missing." }
         ZipFile(source).use { zip ->
             val entry = zip.getEntry("word/document.xml") ?: error("This is not a valid DOCX document.")
             val xml = zip.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val factory = DocumentBuilderFactory.newInstance().apply {
-                isNamespaceAware = true
-                setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-                setFeature("http://xml.org/sax/features/external-general-entities", false)
-                setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-                setExpandEntityReferences(false)
-            }
-            val document = factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
-            val paragraphs = document.getElementsByTagNameNS("*", "p")
-            return (0 until paragraphs.length).map { index ->
-                val paragraph = paragraphs.item(index)
-                val texts = paragraph.childNodes
-                val builder = StringBuilder()
-                fun walk(node: org.w3c.dom.Node) {
-                    if (node.nodeType == org.w3c.dom.Node.ELEMENT_NODE &&
-                        node.localName == "t") builder.append(node.textContent)
-                    else if (node.nodeType == org.w3c.dom.Node.ELEMENT_NODE &&
-                        node.localName == "tab") builder.append('\t')
-                    else if (node.nodeType == org.w3c.dom.Node.ELEMENT_NODE &&
-                        node.localName == "br") builder.append('\n')
-                    else {
-                        val children = node.childNodes
-                        for (i in 0 until children.length) walk(children.item(i))
+            val parser = Xml.newPullParser()
+            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+            parser.setInput(StringReader(xml))
+            val paragraphs = mutableListOf<String>()
+            var paragraph = StringBuilder()
+            var inText = false
+            var event = parser.eventType
+            while (event != XmlPullParser.END_DOCUMENT) {
+                when (event) {
+                    XmlPullParser.START_TAG -> when (parser.name.substringAfter(':')) {
+                        "p" -> paragraph = StringBuilder()
+                        "t" -> inText = true
+                        "tab" -> paragraph.append('\\t')
+                        "br", "cr" -> paragraph.append('\\n')
+                    }
+                    XmlPullParser.TEXT -> if (inText) paragraph.append(parser.text ?: "")
+                    XmlPullParser.END_TAG -> when (parser.name.substringAfter(':')) {
+                        "t" -> inText = false
+                        "p" -> paragraphs.add(paragraph.toString())
                     }
                 }
-                for (i in 0 until texts.length) walk(texts.item(i))
-                builder.toString()
-            }.joinToString("\n")
+                event = parser.next()
+            }
+            return paragraphs.joinToString("\\n")
         }
     }
 
