@@ -98,12 +98,12 @@ internal object OfflineConversions {
         }
 
         try {
-            text.replace("\\r\\n", "\\n").replace('\\r', '\\n').split('\\n').forEach { paragraph ->
+            text.replace("\r\n", "\n").replace('\r', '\n').split('\n').forEach { paragraph ->
                 if (paragraph.isBlank()) {
                     y += leading
                     if (y > pageHeight - margin) nextPage()
                 } else {
-                    val words = paragraph.replace('\\t', ' ').trim().split(Regex("\\s+"))
+                    val words = paragraph.replace('\t', ' ').trim().split(Regex("\\s+"))
                     var line = StringBuilder()
                     for (word in words) {
                         val candidate = if (line.isEmpty()) word else "${line} ${word}"
@@ -181,8 +181,8 @@ internal object OfflineConversions {
                     XmlPullParser.START_TAG -> when (parser.name.substringAfter(':')) {
                         "p" -> paragraph = StringBuilder()
                         "t" -> inText = true
-                        "tab" -> paragraph.append('\\t')
-                        "br", "cr" -> paragraph.append('\\n')
+                        "tab" -> paragraph.append('\t')
+                        "br", "cr" -> paragraph.append('\n')
                     }
                     XmlPullParser.TEXT -> if (inText) paragraph.append(parser.text ?: "")
                     XmlPullParser.END_TAG -> when (parser.name.substringAfter(':')) {
