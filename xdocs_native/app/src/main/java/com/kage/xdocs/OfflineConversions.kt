@@ -206,17 +206,50 @@ internal object OfflineConversions {
             }
             append("<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr>")
         }
-        ZipOutputStream(FileOutputStream(output)).use { zip ->
-            fun entry(name: String, value: String) {
-                zip.putNextEntry(ZipEntry(name))
-                zip.write(value.toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
+        try {
+            ZipOutputStream(FileOutputStream(output)).use { zip ->
+                fun entry(name: String, value: String) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(value.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
+                entry("[Content_Types].xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>""")
+                entry("_rels/.rels", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>""")
+                entry("word/document.xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>$body</w:body></w:document>""")
             }
-            entry("[Content_Types].xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>""")
-            entry("_rels/.rels", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>""")
-            entry("word/document.xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>$body</w:body></w:document>""")
+            validateDocx(output)
+            return output
+        } catch (failure: Throwable) {
+            output.delete()
+            throw failure
         }
-        return output
+    }
+
+    private fun validateDocx(file: File) {
+        require(file.isFile && file.length() > 100L) { "The Word file could not be generated." }
+        ZipFile(file).use { zip ->
+            require(zip.getEntry("[Content_Types].xml") != null &&
+                zip.getEntry("_rels/.rels") != null &&
+                zip.getEntry("word/document.xml") != null) {
+                "The generated Word file is missing required DOCX package parts."
+            }
+            val parser = Xml.newPullParser()
+            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+            zip.getInputStream(zip.getEntry("word/document.xml")).use { parser.setInput(it, "UTF-8") }
+            var hasDocument = false
+            var hasBody = false
+            var event = parser.eventType
+            while (event != XmlPullParser.END_DOCUMENT) {
+                if (event == XmlPullParser.START_TAG) {
+                    when (parser.name.orEmpty().substringAfter(':')) {
+                        "document" -> hasDocument = true
+                        "body" -> hasBody = true
+                    }
+                }
+                event = parser.next()
+            }
+            require(hasDocument && hasBody) { "The generated Word document has invalid XML structure." }
+        }
     }
 
     private fun xmlEscape(value: String): String = value
