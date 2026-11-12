@@ -142,6 +142,14 @@ internal object OfflineConversions {
             document.close()
         }
         require(output.isFile && output.length() > 100L) { "The PDF could not be generated." }
+        try {
+            PDDocument.load(output).use { generated ->
+                require(generated.numberOfPages > 0) { "The generated PDF contains no pages." }
+            }
+        } catch (failure: Throwable) {
+            output.delete()
+            throw IllegalStateException("The generated PDF failed its file-integrity check. Try a smaller or simpler document.", failure)
+        }
         return output
     }
 
