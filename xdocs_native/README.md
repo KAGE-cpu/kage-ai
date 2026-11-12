@@ -15,9 +15,11 @@ X DOCS is a Kotlin/Jetpack Compose Android app. It does not run Flask or use a W
 - Camera scanning using the full-size camera capture intent; capture multiple pages and combine them into a PDF.
 - Import gallery images and convert multiple images into a multi-page PDF.
 - Merge two or more PDFs in picker selection order.
+- Offline document conversions: selectable-text PDF to DOCX/TXT, DOCX to PDF/TXT, TXT to DOCX/PDF, plus JPG/PNG/WebP image format conversion.
+- Text-based DOCX/TXT-to-PDF uses Android's native PDF writer for more reliable Unicode text and multi-page output. DOCX parsing uses Android's XML pull parser.
 - Convert every page of a PDF into PNG files and export them together as a ZIP.
 
-The editor adds text overlays; it does not rewrite or remove existing PDF text. The app currently supports the original app's one-level folder structure. It does not promise arbitrary file-format preview: non-PDF files can be stored, renamed, moved, deleted and exported.
+The editor adds text overlays; it does not rewrite or remove existing PDF text. Document conversion is text-first and does not preserve complex Word page layout, embedded images, tables, headers, footers, or exact typography. PDF-to-Word/Text requires selectable PDF text; scanned PDFs need OCR, which is not included. Word conversions support modern `.docx` files, not legacy `.doc` files. The app currently supports the original app's one-level folder structure. It does not promise arbitrary file-format preview: non-PDF files can be stored, renamed, moved, deleted and exported.
 
 ## Build
 
