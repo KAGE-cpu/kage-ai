@@ -216,15 +216,20 @@ internal object OfflineConversions {
     }
 
     private fun writeDocx(text: String, output: File): File {
-        // PDFs commonly contain form-feed page separators and control characters.
-        // XML 1.0 forbids most control characters; strip those before writing OOXML.
-        val safeText = sanitizeXmlText(text.replace('\u000C', '\n').replace("\r\n", "\n").replace('\r', '\n'))
-        val paragraphs = safeText.split('\n')
+        // Preserve PDF page boundaries as Word page breaks. Form-feed is a
+        // page delimiter in PDFTextStripper output, but is illegal in XML 1.0.
+        val pageSections = text.replace("\r\n", "\n").replace('\r', '\n').split('\u000C')
         val body = buildString {
-            paragraphs.forEach { line ->
-                append("<w:p><w:r><w:t xml:space=\"preserve\">")
-                append(xmlEscape(line))
-                append("</w:t></w:r></w:p>")
+            pageSections.forEachIndexed { pageIndex, section ->
+                section.split('\n').forEach { rawLine ->
+                    val line = sanitizeXmlText(rawLine)
+                    append("<w:p><w:r><w:t xml:space=\"preserve\">")
+                    append(xmlEscape(line))
+                    append("</w:t></w:r></w:p>")
+                }
+                if (pageIndex < pageSections.lastIndex) {
+                    append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>")
+                }
             }
             append("<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr>")
         }
