@@ -260,22 +260,27 @@ internal object OfflineConversions {
                 zip.getEntry("word/document.xml") != null) {
                 "The generated Word file is missing required DOCX package parts."
             }
-            val parser = Xml.newPullParser()
-            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
-            zip.getInputStream(zip.getEntry("word/document.xml")).use { parser.setInput(it, "UTF-8") }
-            var hasDocument = false
-            var hasBody = false
-            var event = parser.eventType
-            while (event != XmlPullParser.END_DOCUMENT) {
-                if (event == XmlPullParser.START_TAG) {
-                    when (parser.name.orEmpty().substringAfter(':')) {
-                        "document" -> hasDocument = true
-                        "body" -> hasBody = true
+            // Keep the ZIP entry stream open for the entire parser lifecycle.
+            // XmlPullParser reads lazily; closing the stream immediately after
+            // setInput() causes the exact "stream closed" failure during next().
+            zip.getInputStream(zip.getEntry("word/document.xml")).use { input ->
+                val parser = Xml.newPullParser()
+                parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+                parser.setInput(input, "UTF-8")
+                var hasDocument = false
+                var hasBody = false
+                var event = parser.eventType
+                while (event != XmlPullParser.END_DOCUMENT) {
+                    if (event == XmlPullParser.START_TAG) {
+                        when (parser.name.orEmpty().substringAfter(':')) {
+                            "document" -> hasDocument = true
+                            "body" -> hasBody = true
+                        }
                     }
+                    event = parser.next()
                 }
-                event = parser.next()
+                require(hasDocument && hasBody) { "The generated Word document has invalid XML structure." }
             }
-            require(hasDocument && hasBody) { "The generated Word document has invalid XML structure." }
         }
     }
 
