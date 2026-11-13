@@ -28,10 +28,21 @@ import java.io.StringReader
  */
 internal object OfflineConversions {
     fun pdfToDocx(source: File, directory: File): File {
-        val text = PDDocument.load(source).use { pdf ->
-            require(pdf.numberOfPages > 0) { "The PDF has no pages." }
-            PDFTextStripper().apply { setSortByPosition(true); setAddMoreFormatting(true) }.getText(pdf)
+        require(source.isFile && source.length() > 0L) { "Select a readable PDF file." }
+        val extracted = try {
+            PDDocument.load(source).use { pdf ->
+                require(pdf.numberOfPages > 0) { "The PDF has no pages." }
+                // Keep extraction settings aligned with PDF-to-Text. The DOCX writer
+                // handles Word paragraph structure separately.
+                PDFTextStripper().apply { setSortByPosition(true) }.getText(pdf)
+            }
+        } catch (failure: Throwable) {
+            throw IllegalStateException(
+                "This PDF could not be read for Word conversion. It may be damaged, encrypted, or use unsupported text encoding.",
+                failure
+            )
         }
+        val text = extracted.replace('\u000C', '\n').replace("\r\n", "\n").replace('\r', '\n')
         require(text.isNotBlank()) {
             "No selectable text was found. This may be a scanned PDF; offline OCR is not available yet."
         }
@@ -205,7 +216,10 @@ internal object OfflineConversions {
     }
 
     private fun writeDocx(text: String, output: File): File {
-        val paragraphs = text.replace("\r\n", "\n").replace('\r', '\n').split('\n')
+        // PDFs commonly contain form-feed page separators and control characters.
+        // XML 1.0 forbids most control characters; strip those before writing OOXML.
+        val safeText = sanitizeXmlText(text.replace('\u000C', '\n').replace("\r\n", "\n").replace('\r', '\n'))
+        val paragraphs = safeText.split('\n')
         val body = buildString {
             paragraphs.forEach { line ->
                 append("<w:p><w:r><w:t xml:space=\"preserve\">")
@@ -258,6 +272,21 @@ internal object OfflineConversions {
             }
             require(hasDocument && hasBody) { "The generated Word document has invalid XML structure." }
         }
+    }
+
+    private fun sanitizeXmlText(value: String): String {
+        val result = StringBuilder(value.length)
+        var index = 0
+        while (index < value.length) {
+            val codePoint = Character.codePointAt(value, index)
+            index += Character.charCount(codePoint)
+            val validXml10 = codePoint == 0x9 || codePoint == 0xA || codePoint == 0xD ||
+                (codePoint in 0x20..0xD7FF) ||
+                (codePoint in 0xE000..0xFFFD) ||
+                (codePoint in 0x10000..0x10FFFF)
+            if (validXml10) result.appendCodePoint(codePoint)
+        }
+        return result.toString()
     }
 
     private fun xmlEscape(value: String): String = value
