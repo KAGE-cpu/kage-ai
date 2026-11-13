@@ -42,7 +42,7 @@ internal object OfflineConversions {
                 failure
             )
         }
-        val text = extracted.replace('\u000C', '\n').replace("\r\n", "\n").replace('\r', '\n')
+        val text = extracted.replace("\r\n", "\n").replace('\r', '\n')
         require(text.isNotBlank()) {
             "No selectable text was found. This may be a scanned PDF; offline OCR is not available yet."
         }
