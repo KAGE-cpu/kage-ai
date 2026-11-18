@@ -240,7 +240,7 @@ def pdf_to_layout_docx(pdf_path, output_path):
             paragraph = doc.add_paragraph()
             paragraph.paragraph_format.left_indent = Pt(max(0, x0 - 20))
             gap = max(0, y0 - previous_bottom)
-            paragraph.paragraph_format.space_before = Pt(min(gap, 48))
+            paragraph.paragraph_format.space_before = Pt(max(0, gap))
             paragraph.paragraph_format.space_after = Pt(max(1, min(10, (y1-y0)*0.08)))
             paragraph.paragraph_format.line_spacing = 1.0
             for line_index, line in enumerate(lines):
