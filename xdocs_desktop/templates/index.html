@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>X DOCS — Desktop</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a2e;--panel2:#18233b;--line:#283653;--text:#eef3ff;--muted:#9eacc8;--blue:#6c8cff;--cyan:#43d5e6;--paper:#fff;--ink:#202534}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px "Segoe UI",Arial,sans-serif;height:100vh;overflow:hidden}
+button,input,select,textarea{font:inherit}button{border:1px solid var(--line);background:#1a2742;color:var(--text);padding:9px 12px;border-radius:8px;cursor:pointer}button:hover{border-color:var(--blue);background:#223456}button.primary{background:linear-gradient(120deg,#526ff0,#7655d8);border:0;font-weight:650}button.danger{color:#ffb7bd}button:disabled{opacity:.45;cursor:not-allowed}
+.top{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:#0d1426;border-bottom:1px solid var(--line)}.brand{font-weight:800;letter-spacing:1.5px;font-size:17px}.brand span{color:var(--cyan)}.sub{font-size:10px;color:var(--muted);letter-spacing:2px;margin-top:2px}.topright{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px}
+.layout{height:calc(100vh - 58px);display:grid;grid-template-columns:220px 1fr}.side{background:#0e1729;border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:7px}.nav{display:flex;align-items:center;gap:11px;text-align:left;width:100%;background:transparent;border-color:transparent;color:#bac7df;padding:12px}.nav.active{background:linear-gradient(90deg,#263b69,#1a2947);border-color:#334d7d;color:#fff}.nav .ico{width:22px;text-align:center;color:var(--cyan);font-size:17px}.sidefoot{margin-top:auto;border-top:1px solid var(--line);padding:14px 8px;color:var(--muted);font-size:11px;line-height:1.6}
+main{min-width:0;overflow:auto;padding:22px 26px 36px}.view{display:none}.view.active{display:block}.heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;gap:16px}.heading h1{margin:0;font-size:24px}.muted{color:var(--muted)}.small{font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{background:linear-gradient(145deg,#17233b,#111a2d);border:1px solid var(--line);border-radius:13px;padding:17px;min-width:0}.card h3{margin:0 0 8px;font-size:15px}.card p{color:var(--muted);line-height:1.5;margin:0 0 13px}.actionrow{display:flex;gap:8px;flex-wrap:wrap}.drop{border:1px dashed #536a9a;border-radius:12px;padding:24px;text-align:center;background:#101b31;color:var(--muted)}.drop strong{display:block;color:var(--text);margin-bottom:5px}.field{display:flex;flex-direction:column;gap:6px;margin:9px 0}.field label{color:var(--muted);font-size:12px}.field input,.field select,.field textarea{width:100%;background:#0c1528;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px}.field textarea{min-height:75px;resize:vertical}.editor-shell{background:#111b30;border:1px solid var(--line);border-radius:12px;overflow:hidden}.docbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:9px;border-bottom:1px solid var(--line);background:#15223a}.docbar button{padding:6px 9px;min-width:31px}.docbar select{background:#0c1528;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:7px;max-width:150px}.docbar input[type=color]{width:34px;height:30px;padding:2px;background:#0c1528;border:1px solid var(--line);border-radius:6px}.paper-wrap{background:#202b40;padding:24px;overflow:auto;max-height:calc(100vh - 245px);min-height:500px}.paper{width:794px;min-height:1123px;background:white;color:#202534;margin:0 auto;padding:76px 72px;box-shadow:0 12px 36px #0008;outline:none;line-height:1.45;font:11pt Arial,sans-serif}.paper:focus{outline:2px solid #8298ff}.paper table{border-collapse:collapse;width:100%;margin:10px 0}.paper td,.paper th{border:1px solid #555;padding:6px;min-width:35px}.paper h1{font-size:22pt}.paper h2{font-size:17pt}.paper h3{font-size:14pt}.status{padding:10px 12px;border-radius:8px;background:#101a2c;color:var(--muted);margin:12px 0;min-height:38px}.status.ok{color:#a8f0d0;border:1px solid #275e52}.status.err{color:#ffb5bc;border:1px solid #703d4c}.pdf-preview{width:100%;height:65vh;background:#fff;border:1px solid var(--line);border-radius:10px}.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.toolcard{background:#131f35;border:1px solid var(--line);border-radius:11px;padding:14px}.toolcard h3{margin:0 0 6px}.toolcard p{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.4}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.hidden{display:none!important}
+@media(max-width:850px){.layout{grid-template-columns:66px 1fr}.side{padding:12px 7px}.nav{justify-content:center;padding:12px 5px}.nav .label,.sidefoot{display:none}.grid,.tools{grid-template-columns:1fr}main{padding:16px}.top{padding:0 12px}.paper{width:100%;min-height:900px;padding:40px 28px}.paper-wrap{padding:10px}}
+</style>
+</head>
+<body>
+<header class="top"><div><div class="brand">X <span>DOCS</span></div><div class="sub">OFFLINE DESKTOP PRODUCTIVITY SUITE</div></div><div class="topright"><span id="connection">● LOCAL MODE</span><button onclick="quitApp()">Exit X DOCS</button></div></header>
+<div class="layout">
+<aside class="side">
+<button class="nav active" data-view="home"><span class="ico">⌂</span><span class="label">Home</span></button>
+<button class="nav" data-view="editor"><span class="ico">▤</span><span class="label">Document Studio</span></button>
+<button class="nav" data-view="exam"><span class="ico">✎</span><span class="label">Exam Paper Builder</span></button>
+<button class="nav" data-view="pdf"><span class="ico">▧</span><span class="label">PDF Studio</span></button>
+<button class="nav" data-view="convert"><span class="ico">⇄</span><span class="label">Conversions</span></button>
+<div class="sidefoot">Your documents stay on this computer.<br>No account. No cloud. No internet required for core tools.</div>
+</aside>
+<main>
+<section class="view active" id="home">
+<div class="heading"><div><h1>Good morning.</h1><div class="muted">Your workspace for school documents, examination papers and PDFs.</div></div><button class="primary" onclick="show('editor')">＋ New document</button></div>
+<div class="grid">
+<div class="card"><h3>▤ Document Studio</h3><p>Create and format documents with fonts, headings, lists, colours, alignment and tables.</p><button onclick="show('editor')">Open editor</button></div>
+<div class="card"><h3>✎ Exam Paper Builder</h3><p>Start a structured assessment with school details, instructions, questions and marks.</p><button onclick="show('exam')">Create exam paper</button></div>
+<div class="card"><h3>▧ PDF Studio</h3><p>Preview PDFs, rotate pages, remove selected pages, add text and merge documents.</p><button onclick="show('pdf')">Open PDF tools</button></div>
+<div class="card"><h3>⇄ Conversions</h3><p>Convert PDFs to editable Word documents and Word documents to PDF.</p><button onclick="show('convert')">Open conversions</button></div>
+</div>
+<div class="status" id="homeStatus">Ready. Choose a workspace to begin.</div>
+<div class="card"><h3>Before using on a very old laptop</h3><p>This desktop edition is designed to run locally. The packaged build still needs a compatible Windows version and a supported 64-bit system. If the laptop is 32-bit or uses an older unsupported Windows release, we may need a different installer.</p></div>
+</section>
+
+<section class="view" id="editor">
+<div class="heading"><div><h1>Document Studio</h1><div class="muted">A spacious page-based writing workspace.</div></div><div class="row"><button onclick="newDocument()">New</button><button onclick="document.getElementById('docxInput').click()">Open Word</button><button class="primary" onclick="exportDocx()">Download Word (.docx)</button><input id="docxInput" type="file" accept=".docx" class="hidden"></div></div>
+<div class="editor-shell">
+<div class="docbar">
+<select onchange="cmd('formatBlock',this.value)"><option value="p">Normal text</option><option value="h1">Title</option><option value="h2">Heading 1</option><option value="h3">Heading 2</option></select>
+<select onchange="cmd('fontName',this.value)"><option>Arial</option><option>Times New Roman</option><option>Calibri</option><option>Cambria</option><option>Georgia</option><option>Verdana</option><option>Tahoma</option><option>Courier New</option></select>
+<select onchange="setFontSize(this.value)"><option value="3">11 pt</option><option value="2">10 pt</option><option value="4">14 pt</option><option value="5">18 pt</option><option value="6">24 pt</option><option value="7">36 pt</option></select>
+<button title="Bold" onclick="cmd('bold')"><b>B</b></button><button title="Italic" onclick="cmd('italic')"><i>I</i></button><button title="Underline" onclick="cmd('underline')"><u>U</u></button><button title="Strike" onclick="cmd('strikeThrough')"><s>S</s></button>
+<button title="Align left" onclick="cmd('justifyLeft')">☰</button><button title="Centre" onclick="cmd('justifyCenter')">≡</button><button title="Align right" onclick="cmd('justifyRight')">☷</button>
+<button title="Bullets" onclick="cmd('insertUnorderedList')">• List</button><button title="Numbering" onclick="cmd('insertOrderedList')">1. List</button>
+<label title="Text colour"><input type="color" value="#202534" onchange="cmd('foreColor',this.value)"></label><label title="Highlight"><input type="color" value="#fff29a" onchange="cmd('hiliteColor',this.value)"></label>
+<button onclick="insertTable()">＋ Table</button><button onclick="cmd('undo')">↶</button><button onclick="cmd('redo')">↷</button>
+</div>
+<div class="paper-wrap"><div id="paper" class="paper" contenteditable="true" spellcheck="true"><h1 style="text-align:center">Document title</h1><p>Start typing here. Select text to format it using the toolbar.</p></div></div>
+</div>
+<div class="row" style="justify-content:space-between;margin-top:10px"><span class="muted small">Tip: use Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+Z and Ctrl+Y.</span><button onclick="saveHtml()">Save editable HTML copy</button></div>
+<div id="editorStatus" class="status">Unsaved document.</div>
+</section>
+
+<section class="view" id="exam">
+<div class="heading"><div><h1>Exam Paper Builder</h1><div class="muted">Create a clean, printable assessment template.</div></div><button class="primary" onclick="show('editor')">Open in Document Studio</button></div>
+<div class="card">
+<div class="grid">
+<div class="field"><label>School name</label><input id="school" placeholder="School name"></div>
+<div class="field"><label>Subject</label><input id="subject" placeholder="e.g. English Home Language"></div>
+<div class="field"><label>Grade / Class</label><input id="grade" placeholder="e.g. Grade 10"></div>
+<div class="field"><label>Examination</label><input id="examName" placeholder="e.g. Mid-year examination"></div>
+<div class="field"><label>Date</label><input id="examDate" type="date"></div>
+<div class="field"><label>Duration</label><input id="duration" placeholder="e.g. 2 hours"></div>
+<div class="field"><label>Total marks</label><input id="marks" type="number" min="1" value="100"></div>
+<div class="field"><label>Learner details</label><select id="learnerFields"><option value="full">Name, surname and class</option><option value="name">Name and surname</option><option value="none">No learner fields</option></select></div>
+</div>
+<div class="field"><label>General instructions</label><textarea id="instructions">1. Answer all questions.
+2. Read each question carefully.
+3. Write neatly and clearly.</textarea></div>
+<div class="actionrow"><button class="primary" onclick="buildExam()">Generate exam paper in editor</button><button onclick="buildMemo()">Generate memorandum template</button></div>
+</div>
+<div class="status" id="examStatus">Fill in the examination details and generate your template.</div>
+</section>
+
+<section class="view" id="pdf">
+<div class="heading"><div><h1>PDF Studio</h1><div class="muted">Preview, annotate and organise PDF files locally.</div></div><button onclick="document.getElementById('pdfInput').click()">Open PDF</button><input id="pdfInput" class="hidden" type="file" accept="application/pdf"></div>
+<div class="card" style="margin-bottom:14px"><div class="row"><strong id="pdfName">No PDF selected</strong><span class="muted small" id="pdfInfo">Choose a PDF to preview it.</span></div><iframe id="pdfFrame" class="pdf-preview" title="PDF preview" style="display:none;margin-top:12px"></iframe></div>
+<div class="tools">
+<div class="toolcard"><h3>Rotate all pages</h3><p>Rotate the selected PDF and download a new copy.</p><div class="row"><button onclick="pdfRotate(90)">Rotate 90°</button><button onclick="pdfRotate(180)">Rotate 180°</button><button onclick="pdfRotate(270)">Rotate 270°</button></div></div>
+<div class="toolcard"><h3>Delete pages</h3><p>Enter page numbers separated by commas. At least one page must remain.</p><div class="field"><input id="deletePages" placeholder="e.g. 2, 4, 7"></div><button onclick="pdfDelete()">Remove selected pages</button></div>
+<div class="toolcard"><h3>Add text to a PDF</h3><p>Add a simple text overlay to a chosen page. Coordinates are measured in PDF points from the top-left area.</p><div class="grid"><div class="field"><label>Page number</label><input id="textPage" type="number" min="1" value="1"></div><div class="field"><label>Font size</label><input id="textSize" type="number" min="6" max="48" value="12"></div></div><div class="field"><label>Text</label><input id="pdfText" placeholder="Text to add"></div><button onclick="pdfAddText()">Add text and download</button></div>
+<div class="toolcard"><h3>Merge PDFs</h3><p>Combine two or more PDF files in the order you select them.</p><input id="mergeInput" type="file" accept="application/pdf" multiple><div style="height:9px"></div><button onclick="pdfMerge()">Merge selected PDFs</button></div>
+</div>
+<div class="status" id="pdfStatus">PDF tools are ready. Some editing actions create a new copy and leave the original unchanged.</div>
+</section>
+
+<section class="view" id="convert">
+<div class="heading"><div><h1>Conversions</h1><div class="muted">Offline document conversion tools.</div></div></div>
+<div class="grid">
+<div class="card"><h3>PDF → Word</h3><p>Reconstructs text blocks using their page positions, font sizes and basic font styles. Results depend on the source PDF; scanned pages need OCR, which is not included.</p><div class="field"><input id="pdfWordInput" type="file" accept="application/pdf"></div><button class="primary" onclick="convertPdfWord()">Convert to Word</button></div>
+<div class="card"><h3>Word → PDF</h3><p>Exports readable paragraphs and tables into a clean PDF. Complex Word layouts, images and advanced page design may not be preserved exactly.</p><div class="field"><input id="wordPdfInput" type="file" accept=".docx"></div><button class="primary" onclick="convertWordPdf()">Convert to PDF</button></div>
+<div class="card"><h3>Open a Word document</h3><p>Load a DOCX file into the editor for basic text and table editing.</p><button onclick="document.getElementById('docxInput').click()">Choose Word file</button></div>
+<div class="card"><h3>Print or save as PDF</h3><p>Use your browser's print dialog to print the current document or save it as PDF.</p><button onclick="printDocument()">Print / Save PDF</button></div>
+</div>
+<div id="convertStatus" class="status">Choose a conversion to begin.</div>
+</section>
+</main></div>
+<script>
+let currentPdf = null, currentPdfName = "";
+function show(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===id));}
+document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>show(n.dataset.view)));
+function status(id,msg,type){const el=document.getElementById(id);el.textContent=msg;el.className='status'+(type?' '+type:'');}
+function cmd(name,value){document.getElementById('paper').focus();document.execCommand(name,false,value||null);}
+function setFontSize(value){cmd('fontSize',value);}
+function insertTable(){const rows=Math.max(1,Math.min(12,parseInt(prompt('Number of rows?','3')||'3')));const cols=Math.max(1,Math.min(8,parseInt(prompt('Number of columns?','3')||'3')));let html='<table><tbody>';for(let r=0;r<rows;r++){html+='<tr>';for(let c=0;c<cols;c++)html+='<td>&nbsp;</td>';html+='</tr>';}html+='</tbody></table><p></p>';cmd('insertHTML',html);}
+function newDocument(){document.getElementById('paper').innerHTML='<h1>Untitled document</h1><p></p>';status('editorStatus','New document started.');show('editor');}
+function saveBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}
+function saveHtml(){const name=(prompt('Document file name','My document')||'My document').replace(/[\\/:*?"<>|]/g,'').trim()||'My document';const html='<!doctype html><meta charset="utf-8"><title>'+name+'</title><body>'+document.getElementById('paper').innerHTML+'</body>';saveBlob(new Blob([html],{type:'text/html'}),name+'.html');status('editorStatus','Editable HTML copy downloaded.');}
+async function downloadApi(url,form,statusId,defaultName){status(statusId,'Working…');try{const res=await fetch(url,{method:'POST',body:form});if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.error||'The operation failed.');}const blob=await res.blob();let name=defaultName;const cd=res.headers.get('content-disposition')||'';const m=cd.match(/filename="?([^"]+)"?/i);if(m)name=m[1];saveBlob(blob,name);status(statusId,'Completed. Your new file has been downloaded.','ok');}catch(e){status(statusId,e.message,'err');}}
+async function exportDocx(){const name=(prompt('Word document name','My document')||'My document').replace(/[\\/:*?"<>|]/g,'').trim()||'My document';try{status('editorStatus','Preparing Word document…');const res=await fetch('/api/docx/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,html:document.getElementById('paper').innerHTML})});if(!res.ok){const j=await res.json();throw new Error(j.error||'Export failed.');}saveBlob(await res.blob(),name+'.docx');status('editorStatus','Word document downloaded.','ok');}catch(e){status('editorStatus',e.message,'err');}}
+document.getElementById('docxInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const form=new FormData();form.append('file',f);try{status('editorStatus','Opening Word document…');const res=await fetch('/api/docx/import',{method:'POST',body:form});const j=await res.json();if(!res.ok)throw new Error(j.error);document.getElementById('paper').innerHTML=j.html;status('editorStatus','Opened '+f.name+'. Review formatting before saving.','ok');show('editor');}catch(err){status('editorStatus',err.message,'err');}e.target.value='';});
+function buildExam(){const v=id=>document.getElementById(id).value.trim();const school=v('school'),subject=v('subject'),grade=v('grade'),exam=v('examName'),date=v('examDate'),duration=v('duration'),marks=v('marks'),fields=v('learnerFields');let h='<div style="text-align:center"><h2>'+(school||'SCHOOL NAME')+'</h2><h1>'+(exam||'EXAMINATION')+'</h1><h2>'+(subject||'SUBJECT')+'</h2></div><p><b>Grade:</b> '+(grade||'________')+' &nbsp;&nbsp; <b>Date:</b> '+(date||'________')+' &nbsp;&nbsp; <b>Duration:</b> '+(duration||'________')+'</p>';if(fields!=='none')h+='<p><b>Learner name:</b> __________________________________________</p>';if(fields==='full')h+='<p><b>Class:</b> _____________________</p>';h+='<p style="text-align:right"><b>TOTAL: '+(marks||'_____')+' MARKS</b></p><hr><h2>INSTRUCTIONS</h2><p>'+((v('instructions')||'').replace(/\n/g,'<br>'))+'</p><hr><h2>SECTION A</h2><p><b>QUESTION 1</b> ('+(marks||'')+' marks)</p><p>1.1 ___________________________________________________________ (___)</p><p>1.2 ___________________________________________________________ (___)</p><p>1.3 ___________________________________________________________ (___)</p><p><br><br></p><h2>SECTION B</h2><p><b>QUESTION 2</b> (___ marks)</p><p>2.1 ___________________________________________________________ (___)</p><p>2.2 ___________________________________________________________ (___)</p><p><br><br><p style="text-align:center"><b>END OF QUESTION PAPER</b></p>';document.getElementById('paper').innerHTML=h;show('editor');status('editorStatus','Exam paper template generated. Replace the placeholders and add your questions.','ok');}
+function buildMemo(){document.getElementById('paper').innerHTML='<h1 style="text-align:center">MEMORANDUM / MARKING GUIDELINE</h1><p><b>School:</b> '+(document.getElementById('school').value||'________')+'</p><p><b>Subject:</b> '+(document.getElementById('subject').value||'________')+' &nbsp; <b>Grade:</b> '+(document.getElementById('grade').value||'________')+'</p><p><b>Examination:</b> '+(document.getElementById('examName').value||'________')+'</p><hr><h2>QUESTION 1</h2><p>1.1 Answer: __________________________________________ (___)</p><p>1.2 Answer: __________________________________________ (___)</p><p>1.3 Answer: __________________________________________ (___)</p><h2>QUESTION 2</h2><p>2.1 Answer: __________________________________________ (___)</p><p>2.2 Answer: __________________________________________ (___)</p><p><b>TOTAL: ______ MARKS</b></p>';show('editor');status('editorStatus','Memorandum template generated. Add the official answers and mark allocation.','ok');}
+document.getElementById('pdfInput').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;if(currentPdf)URL.revokeObjectURL(currentPdf);currentPdf=URL.createObjectURL(f);currentPdfName=f.name;document.getElementById('pdfFrame').src=currentPdf;document.getElementById('pdfFrame').style.display='block';document.getElementById('pdfName').textContent=f.name;document.getElementById('pdfInfo').textContent=(f.size/1024/1024).toFixed(2)+' MB';status('pdfStatus','PDF loaded for preview.');});
+function pdfForm(){const f=document.getElementById('pdfInput').files[0];if(!f)throw new Error('Open a PDF first.');const form=new FormData();form.append('file',f);return form;}
+function pdfRotate(angle){try{const f=pdfForm();f.append('angle',angle);downloadApi('/api/pdf/rotate',f,'pdfStatus','rotated.pdf');}catch(e){status('pdfStatus',e.message,'err');}}
+function pdfDelete(){try{const f=pdfForm();f.append('pages',document.getElementById('deletePages').value);downloadApi('/api/pdf/delete-pages',f,'pdfStatus','edited.pdf');}catch(e){status('pdfStatus',e.message,'err');}}
+function pdfAddText(){try{const f=pdfForm();f.append('page',document.getElementById('textPage').value);f.append('size',document.getElementById('textSize').value);f.append('text',document.getElementById('pdfText').value);downloadApi('/api/pdf/add-text',f,'pdfStatus','annotated.pdf');}catch(e){status('pdfStatus',e.message,'err');}}
+function pdfMerge(){const files=document.getElementById('mergeInput').files;if(files.length<2){status('pdfStatus','Select at least two PDFs.','err');return;}const f=new FormData();for(const file of files)f.append('files',file);downloadApi('/api/pdf/merge',f,'pdfStatus','merged.pdf');}
+function convertPdfWord(){const file=document.getElementById('pdfWordInput').files[0];if(!file){status('convertStatus','Choose a PDF first.','err');return;}const f=new FormData();f.append('file',file);downloadApi('/api/pdf/to-word',f,'convertStatus','converted.docx');}
+function convertWordPdf(){const file=document.getElementById('wordPdfInput').files[0];if(!file){status('convertStatus','Choose a DOCX file first.','err');return;}const f=new FormData();f.append('file',file);downloadApi('/api/docx/to-pdf',f,'convertStatus','converted.pdf');}
+function printDocument(){const content=document.getElementById('paper').innerHTML;const w=window.open('','_blank');if(!w){status('editorStatus','Allow pop-ups to open print preview.','err');return;}w.document.write('<!doctype html><html><head><title>Print document</title><style>body{font:11pt Arial;color:#111;margin:20mm}table{border-collapse:collapse;width:100%}td,th{border:1px solid #555;padding:6px}@page{size:A4;margin:18mm}</style></head><body>'+content+'</body></html>');w.document.close();w.focus();setTimeout(()=>w.print(),400);}
+async function quitApp(){if(!confirm('Close X DOCS? Save your work first.'))return;try{await fetch('/api/quit',{method:'POST'});}catch(e){}window.close();}
+fetch('/api/health').then(r=>r.json()).then(d=>{document.getElementById('connection').textContent='● '+(d.offline?'OFFLINE READY':'LOCAL');}).catch(()=>{document.getElementById('connection').textContent='● LOCAL';});
+</script>
+</body></html>
